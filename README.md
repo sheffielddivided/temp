@@ -30,6 +30,13 @@ Da gir `fetch` en advarsel, og siden bygges fra siste fil i `raw/`.
 
 Manuell oppdatering (tar et minutt i måneden):
 
+**Enklest: opplastingssiden** `upload.html` på GitHub Pages-siden (lenke øverst
+på grafen). Den laster filen rett inn i `raw/` via GitHub-API-et med et
+fine-grained token (kun dette repoet, kun «Contents: Read and write»). Tokenet
+lagres bare i nettleseren hvis du krysser av for det.
+
+Alternativt:
+
 1. Last ned Worldwide Rig Count-filen fra
    https://rigcount.bakerhughes.com/intl-rig-count
 2. Enten last den opp via GitHub-nettsiden til `raw/` (filnavnet spiller
