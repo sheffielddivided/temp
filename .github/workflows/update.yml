@@ -1,0 +1,66 @@
+name: Oppdater Worldwide Rig Count
+
+on:
+  schedule:
+    # Baker Hughes publiserer internasjonale tall tidlig i måneden.
+    # Kjører daglig dag 2–14; uendret fil gir ingen commit.
+    - cron: "23 17 2-14 * *"
+  push:
+    branches: [main]
+    paths: ["raw/**", "scripts/**", "site/**", ".github/workflows/update.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: rigcount
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - name: Test parser
+        run: python -m pytest -q tests
+      - name: Hent ny fil (kan bli blokkert av Akamai – gir da bare en advarsel)
+        run: python scripts/rigcount.py fetch
+      - name: Bygg data
+        run: |
+          if ls raw/*.xlsx >/dev/null 2>&1; then
+            python scripts/rigcount.py build
+          else
+            echo "::warning::Ingen fil i raw/ ennå – siden publiseres uten data."
+          fi
+      - name: Commit endringer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add raw data site/data 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Ingen endringer."
+          else
+            git commit -m "Oppdater Worldwide Rig Count-data"
+            git push
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
