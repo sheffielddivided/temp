@@ -12,16 +12,17 @@ const fmt = (v, d = 0) => (v == null ? "–" : v.toLocaleString("nb-NO", { maxim
 const label = (d) => { const [y, m] = d.split("-"); return `${MONTHS_NO[+m - 1]} ${y}`; };
 const signed = (d, digits = 0) => (d == null ? "–" : (d > 0 ? "+" : d < 0 ? "−" : "±") + fmt(Math.abs(d), digits));
 
-fetch("data/worldwide.json", { cache: "no-cache" })
-  .then((r) => (r.ok ? r.json() : null)).catch(() => null)
-  .then((data) => {
+const getJson = (u) => fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+Promise.all([getJson("data/worldwide.json"), getJson("data/na.json")])
+  .then(([data, na]) => {
     if (!data || !data.detail || !Object.keys(data.detail).length) { $("empty").hidden = false; return; }
     state.data = data;
+    state.na = na;
     if (!data.detail[state.country]) state.country = Object.keys(data.detail)[0];
     $("app").hidden = false;
     renderControls();
     render();
-    let t; window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(renderCharts, 120); });
+    let t; window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => { renderCharts(); renderWeeklyChart(); }, 120); });
   });
 
 function det() { return state.data.detail[state.country]; }
@@ -47,12 +48,15 @@ function render() {
   const name = COUNTRIES[state.country] || state.country;
   $("title").textContent = `${name} Rig Count`;
   document.title = `${name} Rig Count`;
+  renderWeekly();
   renderTiles();
   renderCharts();
   renderTable();
   const m = state.data.meta || {};
-  $("foot").textContent = `Data ${label(m.first)} – ${label(m.last)} · Kilde: Baker Hughes Worldwide Rig Count (månedlige snitt, derfor desimaler) · ` +
-    "Ukentlige tall per delstat/basseng krever Baker Hughes' North America-fil.";
+  const nm = state.na && state.na.meta;
+  $("foot").textContent = (nm ? `Ukentlig: ${labelW(nm.first)} – ${labelW(nm.last)} (Baker Hughes North America Rig Count, siste fil: ${nm.latest_file}). ` : "") +
+    `Månedlig: ${label(m.first)} – ${label(m.last)} (Baker Hughes Worldwide Rig Count, månedlige snitt av ukestall, derfor desimaler).` +
+    (nm ? "" : " Ukentlige tall per delstat/basseng krever Baker Hughes' North America-fil i raw-na/.");
 }
 
 // ------------------------------------------------------------- nøkkeltall
@@ -127,8 +131,15 @@ function chart(wrap, dates, series, opt = {}) {
   const tStep = opt.yMax ? opt.yMax / 4 : step;
   const ticks = []; for (let t = 0; t <= ymax + 1e-9; t += tStep) ticks.push(t);
 
-  const short = n <= 36;
-  const cand = dates.map((d, i) => [d, i]).filter(([d]) => (short ? /-(01|04|07|10)$/ : /-01$/).test(d));
+  const weekly = dates[0] && dates[0].length > 7;
+  const months = weekly ? n / 4.35 : n;
+  const short = months <= 36;
+  const mon = (d) => +d.slice(5, 7);
+  const cand = dates.map((d, i) => [d, i]).filter(([d, i]) => {
+    if (weekly && i > 0 && mon(d) === mon(dates[i - 1])) return false;
+    if (weekly && i === 0 && !/-0[1-7]$/.test(d)) return false;
+    return short ? [1, 4, 7, 10].includes(mon(d)) : mon(d) === 1;
+  });
   const every = Math.ceil(cand.length / Math.max(2, Math.floor(iw / (short ? 64 : 48))));
   const xt = cand.filter((_, k) => k % every === 0);
   const anchor = (i) => (x(i) > W - 36 ? "end" : x(i) < m.l + 16 ? "start" : "middle");
@@ -172,7 +183,7 @@ function chart(wrap, dates, series, opt = {}) {
     const rows = [...layers].reverse().map((l) =>
       `<div class="row"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${l.color}"></span>${l.name}</span><b>${fmt(l.values[i], dg)}${unit}</b></div>`).join("");
     const sum = opt.total ? `<div class="row total"><span>Sum</span><b>${fmt(layers.reduce((a, l) => a + (l.values[i] || 0), 0))}</b></div>` : "";
-    tip.innerHTML = `<div class="t-head">${label(dates[i])}</div>${rows}${sum}`;
+    tip.innerHTML = `<div class="t-head">${weekly ? labelW(dates[i]) : label(dates[i])}</div>${rows}${sum}`;
     tip.hidden = false;
     const card = wrap.parentElement.getBoundingClientRect();
     const sx = (x(i) / W) * box.width + box.left - card.left;
@@ -202,4 +213,94 @@ function renderTable() {
       `<td class="num ${yy > 0 ? "up" : yy < 0 ? "down" : ""}">${signed(yy, 1)}</td></tr>`);
   }
   $("table").querySelector("tbody").innerHTML = rows.join("");
+}
+
+// ------------------------------------------------------------- ukentlig (North America-filen)
+// Fast rekkefølge -> fast farge; øvrige bassenger/provinser samles i «Andre».
+const KEY_GROUPS = {
+  "United States": { dim: "basins", label: "basseng", order: ["Permian", "Haynesville", "Eagle Ford", "Marcellus", "Williston", "Cana Woodford", "Utica"] },
+  Canada: { dim: "states", label: "provins", order: ["Alberta", "Saskatchewan", "British Columbia", "Manitoba", "NL Offshore"] },
+};
+const DIMS = { basins: "Basseng", states: "Delstat/provins", drill_for: "Type", trajectory: "Brønnbane" };
+const DIM_NAMES = { Oil: "Olje", Gas: "Gass", Miscellaneous: "Annet", Horizontal: "Horisontal", Directional: "Retningsboret", Vertical: "Vertikal", Other: "Annen" };
+const MONTHS_LONG = MONTHS_NO;
+function labelW(d) { const [y, m, dd] = d.split("-"); return `${+dd}. ${MONTHS_LONG[+m - 1]} ${y}`; }
+state.wkDim = null;
+
+function naC() { return state.na && state.na.countries[state.country]; }
+
+function renderWeekly() {
+  const c = naC();
+  $("weekly").hidden = !c;
+  if (!c) return;
+  const dates = state.na.dates, i = dates.length - 1;
+  const g = KEY_GROUPS[state.country] || { dim: "states", label: "område", order: [] };
+  if (!state.wkDim || !c[state.wkDim] || (state.wkDim === "basins" && state.country === "Canada")) state.wkDim = g.dim;
+  $("wk-sub").innerHTML = `<span>· uke til ${labelW(dates[i])}</span>`;
+
+  const ago = (k) => (i - k >= 0 ? i - k : null);
+  const d1 = (a) => (ago(1) == null ? null : a[i] - a[ago(1)]);
+  const d52 = (a) => (ago(52) == null ? null : a[i] - a[ago(52)]);
+  const tiles = [["Totalt", c.total], ["Olje", c.drill_for.Oil || []], ["Gass", c.drill_for.Gas || []]];
+  if (c.gom) tiles.push(["Mexicogolfen", c.gom]);
+  else if (c.location.Offshore) tiles.push(["Offshore", c.location.Offshore]);
+  const cls = (x) => (x > 0 ? "up" : x < 0 ? "down" : "");
+  $("wk-tiles").innerHTML = tiles.map(([n, a]) => `<div class="tile"><div class="label">${n} · ${labelW(dates[i])}</div>
+      <div class="value">${fmt(a[i])}</div>
+      <div class="delta"><span class="${cls(d1(a))}">${signed(d1(a))}</span> u/u &nbsp; <span class="${cls(d52(a))}">${signed(d52(a))}</span> å/å</div></div>`).join("");
+
+  // Fordelingsvalg for tabellen
+  const seg = $("wk-dim-ctl"); seg.innerHTML = "";
+  for (const [k, t] of Object.entries(DIMS)) {
+    if (!c[k] || (k === "basins" && Object.keys(c.basins).length < 2)) continue;
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = k === "states" && state.country === "Canada" ? "Provins" : k === "states" ? "Delstat" : t;
+    b.setAttribute("aria-pressed", String(state.wkDim === k));
+    b.onclick = () => { state.wkDim = k; renderWeekly(); };
+    seg.appendChild(b);
+  }
+  renderWeeklyChart();
+  renderWeeklyTable();
+}
+
+function renderWeeklyChart() {
+  const c = naC();
+  if (!c) return;
+  const g = KEY_GROUPS[state.country] || { dim: "states", label: "område", order: [] };
+  const all = state.na.dates, end = all.length - 1;
+  const months = RANGES.find((r) => r[0] === state.range)[2];
+  const start = Math.max(0, end + 1 - Math.round(months * 52 / 12));
+  const cut = (a) => a.slice(start, end + 1);
+  const src = c[g.dim];
+  const named = g.order.filter((k) => src[k]);
+  const rest = Object.keys(src).filter((k) => !named.includes(k));
+  const series = named.map((k, j) => ({ name: k, color: `var(--s${j + 1})`, values: cut(src[k]) }));
+  if (rest.length) {
+    const sum = all.map((_, i) => rest.reduce((a, k) => a + (src[k][i] || 0), 0));
+    series.push({ name: "Andre", color: "var(--other)", values: cut(sum) });
+  }
+  $("wk-chart-title").textContent = state.country === "Canada" ? "Rigger per provins" : "Rigger per basseng";
+  $("wk-chart-hint").textContent = rest.length
+    ? `«Andre» = ${rest.length} øvrige ${state.country === "Canada" ? "provinser" : "bassenger, inkl. «Other» (rigger utenfor BHs navngitte bassenger)"}.`
+    : "";
+  $("legend-wk").innerHTML = legend(series);
+  chart($("chart-wk"), all.slice(start, end + 1), series, { stack: true, total: true, height: 320 });
+}
+
+function renderWeeklyTable() {
+  const c = naC(), dates = state.na.dates, i = dates.length - 1;
+  const src = c[state.wkDim];
+  const has52 = i >= 52;
+  const rows = Object.entries(src).map(([k, a]) => ({ k, v: a[i], w: i ? a[i] - a[i - 1] : null, y: has52 ? a[i] - a[i - 52] : null }))
+    .filter((r) => r.v || r.w || r.y)
+    .sort((a, b) => b.v - a.v || a.k.localeCompare(b.k));
+  const max = Math.max(1, ...rows.map((r) => r.v));
+  const dimName = { basins: "Basseng", states: state.country === "Canada" ? "Provins" : "Delstat", drill_for: "Type", trajectory: "Brønnbane" }[state.wkDim];
+  $("wk-table-title").textContent = `${dimName} · uke til ${labelW(dates[i])}`;
+  $("wk-table").querySelector("thead").innerHTML =
+    `<tr><th>${dimName}</th><th class="num">Rigger</th><th></th><th class="num">u/u</th><th class="num">å/å</th></tr>`;
+  const cell = (d) => `<td class="num ${d > 0 ? "up" : d < 0 ? "down" : ""}">${signed(d)}</td>`;
+  $("wk-table").querySelector("tbody").innerHTML = rows.map((r) =>
+    `<tr><td>${state.wkDim === "basins" && r.k === "Other" ? "Utenfor navngitte bassenger" : DIM_NAMES[r.k] || r.k}</td><td class="num">${fmt(r.v)}</td>
+      <td class="bar-cell"><span style="width:${(r.v / max) * 100}%"></span></td>${cell(r.w)}${cell(r.y)}</tr>`).join("");
 }

@@ -10,6 +10,11 @@
   @media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
   .card .hint { font-size: 12px; color: var(--text-muted); margin: 2px 0 0; }
   .share { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+  .section-title { font-size: 18px; margin: 28px 0 12px; }
+  .section-title span { font-size: 14px; font-weight: 400; color: var(--text-secondary); }
+  #weekly > .section-title:first-child { margin-top: 4px; }
+  td.bar-cell { width: 30%; min-width: 80px; }
+  td.bar-cell span { display: block; height: 6px; border-radius: 3px; background: var(--accent); opacity: .8; }
 </style>
 </head>
 <body>
@@ -17,7 +22,7 @@
   <nav class="nav"><a href="./">Graf</a><a href="map.html">Kart</a><a href="us.html" aria-current="page">USA</a><a href="upload.html">Last opp</a></nav>
   <header class="page-head">
     <h1 id="title">US Rig Count</h1>
-    <p class="sub">Månedlig snitt av Baker Hughes' ukentlige tall, fordelt på type og lokasjon.</p>
+    <p class="sub">Ukentlige tall per basseng og delstat, og månedlige tall tilbake til 2013. Kilde: Baker Hughes.</p>
   </header>
 
   <div id="empty" class="empty" hidden><p><strong>Ingen data ennå.</strong> <a href="upload.html">Last opp en månedsfil.</a></p></div>
@@ -26,6 +31,31 @@
     <div class="controls" role="toolbar" aria-label="Filtre">
       <div class="seg" id="country-ctl" aria-label="Land"></div>
       <div class="seg" id="range-ctl" aria-label="Tidsrom"></div>
+    </div>
+
+    <div id="weekly" hidden>
+      <h2 class="section-title">Ukentlig <span id="wk-sub"></span></h2>
+      <section class="tiles" id="wk-tiles"></section>
+
+      <section class="card">
+        <h2 id="wk-chart-title">Rigger per basseng</h2>
+        <p class="hint" id="wk-chart-hint"></p>
+        <ul class="legend" id="legend-wk"></ul>
+        <div class="chart-wrap" id="chart-wk"></div>
+        <div class="tooltip" hidden></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 id="wk-table-title">Siste uke</h2>
+          <div class="seg" id="wk-dim-ctl" aria-label="Fordeling"></div>
+        </div>
+        <div class="table-wrap">
+          <table id="wk-table"><thead></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <h2 class="section-title">Månedlig <span>· fra Worldwide-filen, lengre historikk</span></h2>
     </div>
 
     <section class="tiles" id="tiles"></section>

@@ -308,6 +308,9 @@ def cmd_build() -> int:
     SITE_DATA.mkdir(parents=True, exist_ok=True)
     (SITE_DATA / "worldwide.json").write_text(json.dumps(to_site_json(rows, meta), separators=(",", ":")))
 
+    import na
+    na.build(ROOT / "raw-na", DATA, SITE_DATA)
+
     last = [r for r in rows if r["date"] == meta["last"]]
     print(f"Totalt {len(rows)} rader, {meta['first']} – {meta['last']}, "
           f"{len({r['country'] for r in rows})} land. Verden {meta['last']}: "

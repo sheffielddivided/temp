@@ -4,13 +4,15 @@ Månedlig import av Baker Hughes **Worldwide Rig Count** og en statisk nettside
 (GitHub Pages) som visualiserer antall rigger per region og land.
 
 ```
-raw/                 alle nedlastede xlsx-filer (= historikken)
+raw/                 Worldwide-filer (månedlig, = historikken)
+raw-na/              North America-filer (ukentlig USA/Canada, = historikken)
 scripts/rigcount.py  fetch / ingest / build
 data/                worldwide_long.csv – én rad per måned/land/type/lokasjon
 site/                nettsiden: index.html (graf), map.html (kart + avspiller),
                      us.html (USA/Canada), upload.html (opplasting),
                      data/worldwide.json
 scripts/geo.py       koordinater per land for kartet
+scripts/na.py        parser for North America-filen («NAM Weekly»)
 tests/               parsertester
 ```
 
@@ -88,3 +90,15 @@ Country, DrillFor, Location, Rig Status, Year, Month, Rig Count Value).
 - Testen `test_real_files_match_summary` sjekker hver fil i `raw/` mot BHs
   egen regionoppsummering øverst i fanen. Endrer BH layouten, feiler
   workflowen før noe publiseres.
+
+## North America (ukentlig)
+
+`raw-na/` tar Baker Hughes' «North America Rig Count Report» (fanen «NAM Weekly»:
+uke × land × county × basseng × delstat × type × lokasjon × brønnbane). Filen
+dekker ca. 3 år; alle filer slås sammen per uke, nyeste fil vinner.
+`tests/test_na.py` kontrollerer hver fil mot BHs «NAM Summary» (totaler,
+delstater, bassenger – denne uken, forrige uke og i fjor).
+
+Last opp via opplastingssiden (filer med «North America» i navnet havner
+automatisk i `raw-na/`). **Ikke flytt filer med «Rename» på GitHub-nettsiden** –
+det ødela en binærfil én gang.

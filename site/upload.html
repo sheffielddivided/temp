@@ -43,13 +43,15 @@
   <nav class="nav"><a href="./">Graf</a><a href="map.html">Kart</a><a href="us.html">USA</a><a href="upload.html" aria-current="page">Last opp</a></nav>
   <header class="page-head">
     <h1>Last opp ny månedsfil</h1>
-    <p class="sub">Worldwide Rig Count (.xlsx) fra Baker Hughes legges i <code>raw/</code> i GitHub-repoet. Siden oppdateres automatisk etter et par minutter.</p>
+    <p class="sub">Excel-filer fra Baker Hughes legges i GitHub-repoet: Worldwide-filer i <code>raw/</code>, North America-filer i <code>raw-na/</code> (gjenkjennes på filnavnet). Siden oppdateres automatisk etter et par minutter.</p>
   </header>
 
   <section class="card up-card">
     <h2>1. Hent filen</h2>
-    <p>Last ned «Worldwide Rig Count» fra
-      <a href="https://rigcount.bakerhughes.com/intl-rig-count" target="_blank" rel="noopener">rigcount.bakerhughes.com/intl-rig-count</a>.</p>
+    <p><strong>Månedlig:</strong> «Worldwide Rig Count» fra
+      <a href="https://rigcount.bakerhughes.com/intl-rig-count" target="_blank" rel="noopener">rigcount.bakerhughes.com/intl-rig-count</a>.<br>
+      <strong>Ukentlig (valgfritt):</strong> «North America Rig Count» fra
+      <a href="https://rigcount.bakerhughes.com/na-rig-count" target="_blank" rel="noopener">rigcount.bakerhughes.com/na-rig-count</a>.</p>
   </section>
 
   <section class="card up-card">
@@ -90,7 +92,9 @@
 "use strict";
 const REPO = "sheffielddivided/temp";   // eier/repo
 const BRANCH = "main";
-const DIR = "raw";
+const DIR = "raw";        // Worldwide-filer
+const DIR_NA = "raw-na";  // North America-filer (gjenkjennes på filnavnet)
+const targetDir = (name) => (/north[\s_-]*america/i.test(name) ? DIR_NA : DIR);
 const API = `https://api.github.com/repos/${REPO}`;
 const KEY = "rigcount-upload-token";
 
@@ -129,8 +133,9 @@ async function pick(f) {
   if (head[0] !== 0x50 || head[1] !== 0x4b) return setStatus("Filen ser ikke ut som en gyldig Excel-fil.", "err");
   file = f;
   $("file-info").textContent = `${f.name} · ${(f.size / 1024).toFixed(0)} KB`;
-  if (!/worldwide/i.test(f.name)) setStatus("Filnavnet inneholder ikke «Worldwide» – sjekk at det er riktig fil. (Innholdet kontrolleres uansett før publisering.)");
-  else setStatus("");
+  if (targetDir(f.name) === DIR_NA) setStatus(`North America-fil – legges i ${DIR_NA}/ (ukentlige USA/Canada-tall).`);
+  else if (!/worldwide/i.test(f.name)) setStatus("Filnavnet inneholder verken «Worldwide» eller «North America» – sjekk at det er riktig fil. Den legges i raw/ og kontrolleres før publisering.");
+  else setStatus(`Worldwide-fil – legges i ${DIR}/.`);
   update();
 }
 
@@ -166,7 +171,8 @@ btn.addEventListener("click", async () => {
   btn.disabled = true;
   try {
     const name = file.name.trim().replace(/[\\/]/g, "_");
-    const path = `${DIR}/${name}`;
+    const dir = targetDir(name);
+    const path = `${dir}/${name}`;
     const urlPath = `/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
 
     setStatus("Sjekker tilgang …");
@@ -177,7 +183,7 @@ btn.addEventListener("click", async () => {
     const existing = await gh(`${urlPath}?ref=${BRANCH}`);
     let sha;
     if (existing.ok && existing.data && existing.data.sha) {
-      if (!confirm(`${name} finnes allerede i ${DIR}/. Erstatte den?`)) { setStatus("Avbrutt."); return; }
+      if (!confirm(`${name} finnes allerede i ${dir}/. Erstatte den?`)) { setStatus("Avbrutt."); return; }
       sha = existing.data.sha;
     }
 
