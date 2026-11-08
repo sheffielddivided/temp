@@ -117,6 +117,16 @@ def _summary(path):
 
 @pytest.mark.skipif(not REAL_FILES, reason="ingen filer i raw/")
 @pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
+def test_all_countries_have_coords(path):
+    from geo import COORDS
+    missing = sorted({r["country"] for r in rigcount.parse_workbook(path)} - set(COORDS))
+    assert not missing, f"Legg til koordinater i scripts/geo.py for: {missing}"
+    for name, (lat, lon) in COORDS.items():
+        assert -90 <= lat <= 90 and -180 <= lon <= 180, name
+
+
+@pytest.mark.skipif(not REAL_FILES, reason="ingen filer i raw/")
+@pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
 def test_real_files_match_summary(path):
     rows = rigcount.parse_workbook(path)
     summary = _summary(path)

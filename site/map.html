@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rig Count Map</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .map-card { padding: 0; overflow: hidden; }
+  .map-wrap { position: relative; background: var(--sea); touch-action: none; }
+  .map-wrap svg { display: block; width: 100%; height: auto; cursor: grab; }
+  .map-wrap svg:active { cursor: grabbing; }
+  .land { fill: var(--land); stroke: var(--land-border); }
+  .land.hl { fill: var(--land-hl); }
+  .bubble { stroke: var(--surface-1); fill-opacity: 0.85; cursor: pointer; }
+  .bubble:hover, .bubble.active { fill-opacity: 1; stroke: var(--text-primary); }
+  .bubble-label { fill: var(--text-primary); font-size: 11px; font-weight: 600; text-anchor: middle; pointer-events: none;
+                  paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; }
+  .zoom-ctl { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .zoom-ctl button {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-primary); font: 600 16px/1 system-ui, sans-serif; cursor: pointer;
+  }
+  .month-badge {
+    position: absolute; left: 12px; bottom: 10px; pointer-events: none;
+    font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em;
+    text-shadow: 0 0 6px var(--sea), 0 0 2px var(--sea);
+  }
+  .month-badge small { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+  .player { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .play {
+    width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: #fff;
+    display: grid; place-items: center; cursor: pointer; flex: none;
+  }
+  .play svg { width: 16px; height: 16px; fill: currentColor; }
+  .step { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); cursor: pointer; flex: none; }
+  .slider { flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+  .slider input { width: 100%; accent-color: var(--accent); }
+  .slider .ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .speed { font-size: 13px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
+  .speed select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
+  .below { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  @media (max-width: 760px) { .below { grid-template-columns: minmax(0, 1fr); } .month-badge { font-size: 18px; left: 8px; bottom: 6px; } .month-badge small { font-size: 11px; } }
+  .size-legend { display: flex; align-items: flex-end; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+  .size-legend span { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+  .size-legend i { display: block; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+  .top-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14px; }
+  .top-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) 56px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .top-list li:hover { background: var(--page); }
+  .top-list .rank { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .top-list .name { display: flex; flex-direction: column; min-width: 0; }
+  .top-list .name b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-list .bar { height: 4px; border-radius: 2px; margin-top: 3px; }
+  .top-list .v { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .note { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+  .note.warn { color: var(--text-secondary); }
+  #map-tip { min-width: 150px; }
+</style>
+</head>
+<body>
+<main class="viz-root">
+  <nav class="nav"><a href="./">Graf</a><a href="map.html" aria-current="page">Kart</a><a href="upload.html">Last opp</a></nav>
+  <header class="page-head">
+    <h1>Rigger på kartet</h1>
+    <p class="sub">Aktive borerigger per land, månedlig. Boblens areal = antall rigger. Dra for å panorere, scroll eller knip for å zoome.</p>
+  </header>
+
+  <div id="empty" class="empty" hidden><p><strong>Ingen data ennå.</strong> <a href="upload.html">Last opp en månedsfil.</a></p></div>
+
+  <div id="app" hidden>
+    <div class="controls" role="toolbar" aria-label="Filtre">
+      <div class="seg" id="section-ctl" aria-label="Seksjon"></div>
+    </div>
+
+    <section class="card map-card">
+      <div class="map-wrap" id="map-wrap">
+        <svg id="map" role="img" aria-label="Verdenskart med rigger per land"></svg>
+        <div class="zoom-ctl">
+          <button type="button" id="zin" aria-label="Zoom inn">+</button>
+          <button type="button" id="zout" aria-label="Zoom ut">−</button>
+          <button type="button" id="zreset" aria-label="Vis hele kartet" style="font-size:13px">⤢</button>
+        </div>
+        <div class="month-badge" id="badge"></div>
+        <div class="tooltip" id="map-tip" hidden></div>
+      </div>
+      <div class="player">
+        <button class="play" id="play" type="button" aria-label="Spill av"></button>
+        <button class="step" id="prev" type="button" aria-label="Forrige måned">‹</button>
+        <button class="step" id="next" type="button" aria-label="Neste måned">›</button>
+        <div class="slider">
+          <input type="range" id="slider" min="0" max="0" step="1" aria-label="Måned">
+          <div class="ends"><span id="start-lbl"></span><span id="end-lbl"></span></div>
+        </div>
+        <label class="speed">Fart
+          <select id="speed">
+            <option value="600">Sakte</option>
+            <option value="250" selected>Normal</option>
+            <option value="100">Rask</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <div class="below">
+      <section class="card">
+        <h2>Regioner</h2>
+        <ul class="legend" id="legend"></ul>
+        <div class="size-legend" id="size-legend"></div>
+        <p class="note warn" id="break-note" hidden></p>
+      </section>
+      <section class="card">
+        <h2 id="top-title">Topp 10</h2>
+        <ol class="top-list" id="top"></ol>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+"use strict";
+const REGION_ORDER = ["United States", "Canada", "Latin America", "Europe", "Africa", "Middle East", "Asia Pacific"];
+const MONTHS_NO = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
+const SECTION_NAMES = { Total: "Totalt", Land: "Land", Offshore: "Offshore" };
+const WORLD_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json";
+
+const $ = (id) => document.getElementById(id);
+const fmt = (v) => (v == null ? "–" : Math.round(v).toLocaleString("nb-NO"));
+const label = (d) => { const [y, m] = d.split("-"); return `${MONTHS_NO[+m - 1]} ${y}`; };
+// Kartfarge følger samme region-rekkefølge som grafen; USA og Canada er egne «regioner».
+const mapRegion = (c) => (c.region === "North America" ? c.name : c.region);
+const colorVar = (r) => { const i = REGION_ORDER.indexOf(r); return i >= 0 ? `var(--s${i + 1})` : "var(--s8)"; };
+
+const state = { data: null, section: "Total", i: 0, playing: false, timer: null, transform: d3.zoomIdentity, active: null };
+
+Promise.all([
+  fetch("data/worldwide.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  fetch(WORLD_URL).then((r) => r.json()),
+]).then(([data, world]) => {
+  if (!data || !data.geo) { $("empty").hidden = false; return; }
+  state.data = data;
+  state.world = topojson.feature(world, world.objects.countries);
+  state.world.features = state.world.features.filter((f) => f.id !== "010"); // uten Antarktis
+  const secs = Object.keys(data.sections);
+  state.section = secs.includes("Total") ? "Total" : secs[0];
+  state.i = data.sections[state.section].dates.length - 1;
+  $("app").hidden = false;
+  setupControls();
+  buildMap();
+  render(false);
+  window.addEventListener("resize", debounce(() => { buildMap(); render(false); }, 150));
+});
+
+function debounce(fn, ms) { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; }
+function sec() { return state.data.sections[state.section]; }
+
+// --------------------------------------------------------------- kontroller
+function setupControls() {
+  const order = ["Total", "Land", "Offshore"];
+  const secs = Object.keys(state.data.sections).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const segEl = $("section-ctl");
+  const drawSeg = () => {
+    segEl.innerHTML = "";
+    for (const s of secs) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = SECTION_NAMES[s] || s;
+      b.setAttribute("aria-pressed", String(s === state.section));
+      b.onclick = () => { state.section = s; drawSeg(); buildScale(); render(false); };
+      segEl.appendChild(b);
+    }
+  };
+  drawSeg();
+
+  const dates = sec().dates;
+  const slider = $("slider");
+  slider.max = dates.length - 1;
+  slider.value = state.i;
+  $("start-lbl").textContent = label(dates[0]);
+  $("end-lbl").textContent = label(dates.at(-1));
+  slider.addEventListener("input", () => { stop(); state.i = +slider.value; render(false); });
+  $("play").onclick = () => (state.playing ? stop() : play());
+  $("prev").onclick = () => { stop(); step(-1); };
+  $("next").onclick = () => { stop(); step(1); };
+  $("speed").onchange = () => { if (state.playing) { stop(); play(); } };
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, select, textarea")) return;
+    if (e.key === " ") { e.preventDefault(); state.playing ? stop() : play(); }
+    if (e.key === "ArrowLeft") { stop(); step(-1); }
+    if (e.key === "ArrowRight") { stop(); step(1); }
+  });
+  setPlayIcon();
+
+  const legendRegions = REGION_ORDER.filter((r) => Object.values(state.data.sections).some((s) => s.regions[r]));
+  $("legend").innerHTML = legendRegions.map((r) => `<li><span class="sw" style="background:${colorVar(r)}"></span>${r}</li>`).join("");
+
+  const br = (state.data.meta.breaks || [])[0];
+  if (br) {
+    $("break-note").hidden = false;
+    $("break-note").textContent = `Merk: ${br.country} rapporteres som «${br.to}» fra ${label(br.date)} (tidligere «${br.from}»). ` +
+      `Boblen blir derfor mye større i ${label(br.date)} uten at aktiviteten økte tilsvarende.`;
+  }
+}
+
+function setPlayIcon() {
+  $("play").innerHTML = state.playing
+    ? '<svg viewBox="0 0 16 16"><rect x="3" y="2" width="4" height="12" rx="1"/><rect x="9" y="2" width="4" height="12" rx="1"/></svg>'
+    : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>';
+  $("play").setAttribute("aria-label", state.playing ? "Pause" : "Spill av");
+}
+
+function play() {
+  const n = sec().dates.length;
+  if (state.i >= n - 1) { state.i = 0; render(false); }
+  state.playing = true; setPlayIcon();
+  const tick = () => {
+    if (state.i >= sec().dates.length - 1) { stop(); return; }
+    state.i++; render(true);
+    state.timer = setTimeout(tick, +$("speed").value);
+  };
+  state.timer = setTimeout(tick, +$("speed").value);
+}
+function stop() { state.playing = false; clearTimeout(state.timer); setPlayIcon(); }
+function step(d) { state.i = Math.max(0, Math.min(sec().dates.length - 1, state.i + d)); render(false); }
+
+// --------------------------------------------------------------- kart
+let svg, gRoot, gLand, gBubbles, gLabels, projection, zoom, W, H, rScale;
+
+function buildMap() {
+  const wrap = $("map-wrap");
+  W = wrap.clientWidth;
+  H = Math.round(W < 600 ? W * 0.8 : Math.min(W * 0.52, window.innerHeight * 0.7));
+  projection = d3.geoNaturalEarth1().fitExtent([[4, 4], [W - 4, H - 4]], state.world);
+  const path = d3.geoPath(projection);
+
+  svg = d3.select("#map").attr("viewBox", `0 0 ${W} ${H}`);
+  svg.selectAll("*").remove();
+  gRoot = svg.append("g");
+  gLand = gRoot.append("g");
+  gLand.selectAll("path").data(state.world.features).join("path").attr("class", "land").attr("d", path);
+  gBubbles = gRoot.append("g");
+  gLabels = gRoot.append("g");
+
+  zoom = d3.zoom().scaleExtent([1, 16]).translateExtent([[-W * 0.1, -H * 0.1], [W * 1.1, H * 1.1]])
+    .on("zoom", (e) => { state.transform = e.transform; applyTransform(); });
+  svg.call(zoom).on("dblclick.zoom", null);
+  svg.call(zoom.transform, state.transform);
+  svg.on("click", (e) => { if (e.target.tagName !== "circle") hideTip(); });
+  $("zin").onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1.8);
+  $("zout").onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1 / 1.8);
+  $("zreset").onclick = () => svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+  buildScale();
+}
+
+function buildScale() {
+  // Fast skala over HELE perioden og alle seksjoner, så boblene kan sammenlignes over tid.
+  let max = 1;
+  for (const s of Object.values(state.data.sections)) for (const c of s.countries) for (const v of c.values) if (v > max) max = v;
+  rScale = d3.scaleSqrt().domain([0, max]).range([0, Math.max(22, W * 0.05)]);
+  const steps = [10, 100, Math.round(max / 2 / 100) * 100 || 500].filter((v, i, a) => a.indexOf(v) === i);
+  $("size-legend").innerHTML = steps.map((v) => {
+    const d = 2 * rScale(v);
+    return `<span><i style="width:${d}px;height:${d}px"></i>${fmt(v)}</span>`;
+  }).join("");
+}
+
+// Boblene holder omtrent fast skjermstørrelse ved zoom (vokser litt), så tette områder skilles.
+const rAt = (v, k) => rScale(v || 0) / Math.pow(k, 0.75);
+
+function applyTransform() {
+  const k = state.transform.k;
+  gRoot.attr("transform", state.transform);
+  gLand.selectAll("path").attr("stroke-width", 0.5 / k);
+  gBubbles.selectAll("circle").attr("r", (d) => rAt(d.v, k)).attr("stroke-width", 1 / k);
+  updateLabels();
+  positionTipForActive();
+}
+
+function points() {
+  const s = sec(), geo = state.data.geo, i = state.i, dates = s.dates;
+  return s.countries
+    .filter((c) => geo[c.name])
+    .map((c) => {
+      const [x, y] = projection(geo[c.name]);
+      const v = c.values[i] || 0, prevY = i >= 12 ? c.values[i - 12] : null;
+      const br = (state.data.meta.breaks || []).find((b) => b.country === c.name && dates[i - 12] < b.date && b.date <= dates[i]);
+      return { id: c.region + "|" + c.name, name: c.name, region: mapRegion(c), x, y, v, yy: prevY == null ? null : v - prevY, br };
+    });
+}
+
+function render(animate) {
+  const s = sec(), dates = s.dates, i = state.i, k = state.transform.k;
+  const pts = points().filter((p) => p.v > 0).sort((a, b) => b.v - a.v);
+  const t = animate ? svg.transition().duration(Math.min(+$("speed").value * 0.9, 400)).ease(d3.easeLinear) : null;
+
+  const sel = gBubbles.selectAll("circle").data(pts, (d) => d.id);
+  sel.exit().interrupt().remove();
+  const enter = sel.enter().append("circle").attr("class", "bubble")
+    .attr("cx", (d) => d.x).attr("cy", (d) => d.y).attr("r", 0)
+    .attr("fill", (d) => colorVar(d.region)).attr("stroke-width", 1 / k)
+    .on("pointerenter", (e, d) => showTip(d, e))
+    .on("pointermove", (e, d) => showTip(d, e))
+    .on("pointerleave", () => { if (!state.pinned) hideTip(); })
+    .on("click", (e, d) => { e.stopPropagation(); state.pinned = true; showTip(d, e); });
+  const merged = enter.merge(sel).order();
+  (t ? merged.transition(t) : merged.interrupt()).attr("r", (d) => rAt(d.v, k));
+  merged.classed("active", (d) => d.id === state.active);
+
+  state.pts = pts;
+  updateLabels();
+
+  const world = s.world ? s.world[i] : pts.reduce((a, p) => a + p.v, 0);
+  $("badge").innerHTML = `${label(dates[i])}<small>${fmt(world)} rigger · ${SECTION_NAMES[state.section] || state.section}</small>`;
+  $("slider").max = dates.length - 1;
+  $("slider").value = i;
+
+  const top = pts.slice(0, 10), max = top.length ? top[0].v : 1;
+  $("top-title").textContent = `Topp 10 · ${label(dates[i])}`;
+  $("top").innerHTML = top.map((p, n) => `
+    <li data-id="${p.id}"><span class="rank">${n + 1}</span>
+      <span class="name"><b>${p.name}</b><span class="bar" style="width:${(p.v / max) * 100}%;background:${colorVar(p.region)}"></span></span>
+      <span class="v">${fmt(p.v)}</span></li>`).join("");
+  $("top").querySelectorAll("li").forEach((li) => li.addEventListener("click", () => focusCountry(li.dataset.id)));
+
+  if (state.active) {
+    const p = pts.find((q) => q.id === state.active);
+    if (p) fillTip(p); else hideTip();
+  }
+}
+
+function updateLabels() {
+  if (!state.pts) return;
+  const k = state.transform.k;
+  // Navn på boblene som er store nok på skjermen (mer tekst jo mer du zoomer).
+  const minScreenR = 14;
+  const shown = state.pts.filter((p) => rAt(p.v, k) * k >= minScreenR).slice(0, 25);
+  gLabels.selectAll("text").data(shown, (d) => d.id).join("text")
+    .attr("class", "bubble-label")
+    .attr("x", (d) => d.x).attr("y", (d) => d.y)
+    .attr("dy", "0.35em")
+    .style("font-size", `${11 / k}px`).style("stroke-width", `${3 / k}px`)
+    .text((d) => d.name.replace("United States", "USA").replace("United Kingdom Offshore", "UK offshore").replace("Saudi Arabia", "Saudi-Arabia"));
+}
+
+function focusCountry(id) {
+  const p = state.pts.find((q) => q.id === id);
+  if (!p) return;
+  const k = Math.max(state.transform.k, 4);
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(W / 2 - p.x * k, H / 2 - p.y * k).scale(k))
+    .on("end", () => { state.pinned = true; state.active = id; fillTip(p); positionTipForActive(); render(false); });
+}
+
+// --------------------------------------------------------------- tooltip
+function fillTip(p) {
+  const tip = $("map-tip");
+  const yy = p.yy == null ? "" :
+    `<div class="row"><span>Endring å/å${p.br ? "*" : ""}</span><b>${p.yy > 0 ? "+" : p.yy < 0 ? "−" : "±"}${fmt(Math.abs(p.yy))}</b></div>` +
+    (p.br ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:200px">*Metodebrudd ${label(p.br.date)}: «${p.br.from}» → «${p.br.to}»</div>` : "");
+  tip.innerHTML = `<div class="t-head">${p.name}</div>
+    <div class="row"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${colorVar(p.region)}"></span>${p.region}</span></div>
+    <div class="row"><span>${label(sec().dates[state.i])}</span><b>${fmt(p.v)} rigger</b></div>${yy}`;
+  tip.hidden = false;
+}
+function showTip(p, e) {
+  state.active = p.id;
+  gBubbles.selectAll("circle").classed("active", (d) => d.id === p.id);
+  fillTip(p);
+  placeTip(e.clientX, e.clientY);
+}
+function positionTipForActive() {
+  if (!state.active || $("map-tip").hidden || !state.pts) return;
+  const p = state.pts.find((q) => q.id === state.active);
+  if (!p) return;
+  const box = $("map").getBoundingClientRect(), t = state.transform;
+  placeTip(box.left + (t.applyX(p.x) / W) * box.width, box.top + (t.applyY(p.y) / H) * box.height);
+}
+function placeTip(cx, cy) {
+  const tip = $("map-tip"), wrap = $("map-wrap").getBoundingClientRect();
+  let x = cx - wrap.left + 14, y = cy - wrap.top + 14;
+  if (x + tip.offsetWidth > wrap.width - 4) x = cx - wrap.left - tip.offsetWidth - 14;
+  if (y + tip.offsetHeight > wrap.height - 4) y = cy - wrap.top - tip.offsetHeight - 14;
+  tip.style.left = `${Math.max(4, x)}px`; tip.style.top = `${Math.max(4, y)}px`;
+}
+function hideTip() {
+  $("map-tip").hidden = true; state.active = null; state.pinned = false;
+  gBubbles.selectAll("circle").classed("active", false);
+}
+</script>
+</body>
+</html>

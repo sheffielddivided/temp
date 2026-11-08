@@ -250,7 +250,13 @@ def to_site_json(rows: list[dict], meta: dict) -> dict:
             "countries": [{"name": c, "region": reg, "values": rnd(v)}
                           for (reg, c), v in sorted(countries.items())],
         }
-    return {"meta": meta, "sections": sections}
+    from geo import COORDS
+    names = sorted({r["country"] for r in rows})
+    missing = [n for n in names if n not in COORDS]
+    for n in missing:
+        print(f"::warning::Mangler koordinater for «{n}» i scripts/geo.py – vises ikke på kartet.")
+    geo = {n: [COORDS[n][1], COORDS[n][0]] for n in names if n in COORDS}  # [lon, lat]
+    return {"meta": meta, "sections": sections, "geo": geo}
 
 
 def cmd_build() -> int:
