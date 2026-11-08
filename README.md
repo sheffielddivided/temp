@@ -93,7 +93,16 @@ Country, DrillFor, Location, Rig Status, Year, Month, Rig Count Value).
 
 ## North America (ukentlig)
 
-`raw-na/` tar Baker Hughes' «North America Rig Count Report» (fanen «NAM Weekly»:
+`raw-na/` tar to filtyper:
+
+- **Historisk pivot-fil** «North American Rotary Rig Count Pivot Table
+  (Feb 2011 - Mar 2024).xlsb» (fanen «Master Data»). Leses med `pyxlsb`.
+  Mangler GOM-kolonnen; den utledes som USA offshore i Louisiana, Texas,
+  Alabama og Mississippi. Regelen gir nøyaktig BHs GOM-tall i alle 149 uker i
+  .xlsx-filen (testes), og de to formatene er identiske i overlappende uker.
+- **Ukerapporten** «North America Rig Count Report» (.xlsx), se under.
+
+Ukerapporten (fanen «NAM Weekly»:
 uke × land × county × basseng × delstat × type × lokasjon × brønnbane). Filen
 dekker ca. 3 år; alle filer slås sammen per uke, nyeste fil vinner.
 `tests/test_na.py` kontrollerer hver fil mot BHs «NAM Summary» (totaler,

@@ -1,9 +1,13 @@
 """Baker Hughes North America Rig Count (ukentlig) – parsing og site-data.
 
-Leser detaljtabellen i fanen «NAM Weekly» (én rad per uke × land × county ×
-basseng × type × lokasjon × delstat × brønnbane). Hver fil dekker bare ca.
-de siste 3 årene, så alle filer i raw-na/ slås sammen; for uker som finnes i
-flere filer vinner filen med senest innhold.
+To filtyper i raw-na/:
+- «North America Rig Count Report» (.xlsx): fanen «NAM Weekly», ca. siste 3 år.
+- «North American Rotary Rig Count Pivot Table» (.xlsb): fanen «Master Data»,
+  historikk fra 2011. Mangler GOM-kolonnen; den utledes som USA offshore i
+  Gulf-delstatene (regelen er kontrollert mot .xlsx-filene i tests/test_na.py,
+  og de to formatene er identiske i overlappende uker).
+Alle filer slås sammen per uke; for uker som finnes i flere filer vinner
+filen med senest innhold.
 """
 from __future__ import annotations
 
@@ -28,7 +32,16 @@ COLUMNS = {
     "us_publishdate": "date",
     "rig count value": "rigs",
 }
-FIELDS = ["date", "country", "state", "county", "basin", "gom", "drill_for", "location", "trajectory", "rigs", "file"]
+# Historisk pivot-fil (.xlsb, fanen «Master Data»)
+XLSB_SHEET = "Master Data"
+XLSB_COLUMNS = {
+    "country": "country", "county": "county", "basin": "basin", "drillfor": "drill_for",
+    "location": "location", "trajectory": "trajectory", "rigcount": "rigs",
+    "state/province": "state", "publishdate": "date",
+}
+GULF_STATES = {"Louisiana", "Texas", "Alabama", "Mississippi"}
+# CSV-en aggregeres uten county for å holde størrelsen nede (county finnes i rådatafilene).
+FIELDS = ["date", "country", "state", "basin", "gom", "drill_for", "location", "trajectory", "rigs"]
 LOCATIONS = {"inland waters": "Inland Waters", "land": "Land", "offshore": "Offshore"}
 SMALL = {"of", "the", "and"}
 ACRONYMS = {"nl": "NL", "bc": "BC", "nwt": "NWT", "gom": "GOM"}
@@ -56,6 +69,54 @@ def _date(v) -> str:
     raise ValueError(f"ukjent datoformat: {v!r}")
 
 
+def parse_file(path: Path) -> list[dict]:
+    return parse_xlsb(path) if path.suffix.lower() == ".xlsb" else parse_workbook(path)
+
+
+def is_gulf(country: str, location: str, state: str) -> bool:
+    return country == "United States" and location == "Offshore" and state in GULF_STATES
+
+
+def parse_xlsb(path: Path) -> list[dict]:
+    from pyxlsb import open_workbook
+
+    out = []
+    with open_workbook(str(path)) as wb:
+        if XLSB_SHEET not in wb.sheets:
+            raise ValueError(f"{path.name}: fant ikke fanen «{XLSB_SHEET}» (faner: {wb.sheets})")
+        with wb.get_sheet(XLSB_SHEET) as sh:
+            cols = None
+            for row in sh.rows():
+                v = [c.v for c in row]
+                if cols is None:
+                    keys = [_key(c) for c in v]
+                    if all(k in keys for k in XLSB_COLUMNS):
+                        cols = {dst: keys.index(src) for src, dst in XLSB_COLUMNS.items()}
+                    continue
+                g = lambda name: v[cols[name]] if cols[name] < len(v) else None  # noqa: E731
+                if not g("country"):
+                    continue
+                d = g("date")
+                date = (dt.date(1899, 12, 30) + dt.timedelta(days=int(d))).isoformat() if isinstance(d, (int, float)) else _date(d)
+                country, state = _title(g("country")), _title(g("state"))
+                location = LOCATIONS.get(_key(g("location")), str(g("location") or "").strip())
+                rigs = g("rigs")
+                out.append({
+                    "date": date, "country": country, "state": state,
+                    "basin": str(g("basin") or "").strip() or "Other",
+                    "gom": "Yes" if is_gulf(country, location, state) else "No",
+                    "drill_for": str(g("drill_for") or "").strip(),
+                    "location": location,
+                    "trajectory": str(g("trajectory") or "").strip() or "Other",
+                    "rigs": float(rigs) if isinstance(rigs, (int, float)) else 0.0,
+                })
+            if cols is None:
+                raise ValueError(f"{path.name}: fant ikke overskriftsraden {list(XLSB_COLUMNS)} i «{XLSB_SHEET}»")
+    if not out:
+        raise ValueError(f"{path.name}: «{XLSB_SHEET}» er tom")
+    return out
+
+
 def parse_workbook(path: Path) -> list[dict]:
     import openpyxl
 
@@ -80,14 +141,12 @@ def parse_workbook(path: Path) -> list[dict]:
                 "date": _date(g("date")),
                 "country": _title(g("country")),
                 "state": _title(g("state")),
-                "county": str(g("county") or "").strip(),
                 "basin": str(g("basin") or "").strip() or "Other",
                 "gom": "Yes" if _key(g("gom")) == "yes" else "No",
                 "drill_for": str(g("drill_for") or "").strip(),
                 "location": LOCATIONS.get(_key(g("location")), str(g("location") or "").strip()),
                 "trajectory": str(g("trajectory") or "").strip() or "Other",
                 "rigs": float(v) if isinstance(v, (int, float)) else 0.0,
-                "file": path.name,
             })
         if cols is None:
             raise ValueError(f"{path.name}: fant ikke overskriftsraden {list(COLUMNS)} i «{SHEET}»")
@@ -139,21 +198,25 @@ def to_site_json(rows: list[dict], meta: dict) -> dict:
 
 
 def build(raw_dir: Path, data_dir: Path, site_data: Path) -> None:
-    files = sorted(raw_dir.glob("*.xlsx")) if raw_dir.exists() else []
+    files = sorted(p for p in raw_dir.glob("*") if p.suffix.lower() in (".xlsx", ".xlsb")) if raw_dir.exists() else []
     if not files:
         print("Ingen North America-filer i raw-na/ – hopper over ukesdata.")
         return
     parsed = []
     for f in files:
-        rows = parse_workbook(f)
+        rows = parse_file(f)
         print(f"  {f.name}: {len(rows)} rader, {min(r['date'] for r in rows)} – {max(r['date'] for r in rows)}")
         parsed.append(rows)
     rows = merge(parsed)
+    agg: dict[tuple, float] = defaultdict(float)
+    for r in rows:
+        agg[tuple(r[k] for k in FIELDS[:-1])] += r["rigs"]
     data_dir.mkdir(exist_ok=True)
     with (data_dir / "na_weekly_long.csv").open("w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=FIELDS)
-        w.writeheader()
-        w.writerows(rows)
+        w = csv.writer(fh)
+        w.writerow(FIELDS)
+        for k, v in agg.items():
+            w.writerow([*k, int(v) if float(v).is_integer() else round(v, 3)])
     latest = max(zip(files, parsed), key=lambda fp: max(r["date"] for r in fp[1]))[0]
     meta = {"files": [f.name for f in files], "latest_file": latest.name,
             "first": rows[0]["date"], "last": rows[-1]["date"]}

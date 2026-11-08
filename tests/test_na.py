@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import na  # noqa: E402
 
-FILES = sorted((ROOT / "raw-na").glob("*.xlsx"))
+FILES = sorted(p for p in (ROOT / "raw-na").glob("*") if p.suffix.lower() in (".xlsx", ".xlsb"))
+SUMMARY_FILES = [p for p in FILES if p.suffix.lower() == ".xlsx"]
 
 
 def _summary(path):
@@ -52,8 +53,8 @@ def _week_dates(rows):
     return this, last, year_ago
 
 
-@pytest.mark.skipif(not FILES, reason="ingen filer i raw-na/")
-@pytest.mark.parametrize("path", FILES, ids=lambda p: p.name)
+@pytest.mark.skipif(not SUMMARY_FILES, reason="ingen .xlsx i raw-na/")
+@pytest.mark.parametrize("path", SUMMARY_FILES, ids=lambda p: p.name)
 def test_na_matches_summary(path):
     rows = na.parse_workbook(path)
     summary = _summary(path)
@@ -103,3 +104,21 @@ def test_merge_newer_file_wins():
     new = [dict(date="2024-01-12", rigs=3), dict(date="2024-01-19", rigs=4)]
     assert [(r["date"], r["rigs"]) for r in na.merge([new, old])] == [
         ("2024-01-05", 1), ("2024-01-12", 3), ("2024-01-19", 4)]
+
+
+XLSX = [p for p in FILES if p.suffix.lower() == ".xlsx"]
+
+
+@pytest.mark.skipif(not XLSX, reason="ingen .xlsx i raw-na/")
+@pytest.mark.parametrize("path", XLSX, ids=lambda p: p.name)
+def test_gom_rule_holds(path):
+    """Den historiske .xlsb-filen mangler GOM; vi utleder den som USA offshore i
+    Gulf-delstatene. Denne testen sikrer at regelen gir BHs egne GOM-tall."""
+    rows = na.parse_workbook(path)
+    gom, rule = defaultdict(float), defaultdict(float)
+    for r in rows:
+        if r["gom"] == "Yes":
+            gom[r["date"]] += r["rigs"]
+        if na.is_gulf(r["country"], r["location"], r["state"]):
+            rule[r["date"]] += r["rigs"]
+    assert {d: v for d, v in gom.items() if v} == {d: v for d, v in rule.items() if v}
