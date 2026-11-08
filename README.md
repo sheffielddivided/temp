@@ -5,7 +5,8 @@ Månedlig import av Baker Hughes **Worldwide Rig Count** og en statisk nettside
 
 ```
 raw/                 Worldwide-filer (månedlig, = historikken)
-raw-na/              North America-filer (ukentlig USA/Canada, = historikken)
+history/             ukehistorikk USA/Canada fra 2011 (na_weekly.csv) + kilde per uke
+                     (na_sources.json) – kilden til sannhet for ukedataene
 scripts/rigcount.py  fetch / ingest / build
 data/                worldwide_long.csv – én rad per måned/land/type/lokasjon
 site/                nettsiden: index.html (graf), map.html (kart + avspiller),
@@ -93,21 +94,28 @@ Country, DrillFor, Location, Rig Status, Year, Month, Rig Count Value).
 
 ## North America (ukentlig)
 
-`raw-na/` tar to filtyper:
+Ukerapportene fra Baker Hughes («North America Rig Count Report», ~7 MB) lagres
+**ikke** i main. Flyten er:
 
-- **Historisk pivot-fil** «North American Rotary Rig Count Pivot Table
-  (Feb 2011 - Mar 2024).xlsb» (fanen «Master Data»). Leses med `pyxlsb`.
-  Mangler GOM-kolonnen; den utledes som USA offshore i Louisiana, Texas,
-  Alabama og Mississippi. Regelen gir nøyaktig BHs GOM-tall i alle 149 uker i
-  .xlsx-filen (testes), og de to formatene er identiske i overlappende uker.
-- **Ukerapporten** «North America Rig Count Report» (.xlsx), se under.
+1. Opplastingssiden legger filen i grenen **`inbox`** (mappen `inbox/`) og
+   starter workflowen (krever «Actions: Read and write» på tokenet; ellers tas
+   den av den daglige kjøringen kl. 17:23 UTC).
+2. Workflowen henter filen fra `inbox`, kontrollerer den mot BHs egen
+   «NAM Summary» (`tests/test_na.py`), og fletter ukene inn i
+   `history/na_weekly.csv`. For hver uke vinner rapporten med senest innhold
+   (`history/na_sources.json` holder styr på det), så en eldre rapport aldri
+   overskriver nyere/reviderte tall.
+3. `inbox` nullstilles til en ny rot-commit uten filen, så Excel-filen
+   forsvinner fra repoet. Main vokser bare med de små tekstendringene i
+   `history/`.
 
-Ukerapporten (fanen «NAM Weekly»:
-uke × land × county × basseng × delstat × type × lokasjon × brønnbane). Filen
-dekker ca. 3 år; alle filer slås sammen per uke, nyeste fil vinner.
-`tests/test_na.py` kontrollerer hver fil mot BHs «NAM Summary» (totaler,
-delstater, bassenger – denne uken, forrige uke og i fjor).
+Feiler kontrollen, blir filen liggende i `inbox` og ingenting publiseres.
 
-Last opp via opplastingssiden (filer med «North America» i navnet havner
-automatisk i `raw-na/`). **Ikke flytt filer med «Rename» på GitHub-nettsiden** –
-det ødela en binærfil én gang.
+`history/` ble bygd fra BHs pivot-fil «North American Rotary Rig Count Pivot
+Table (Feb 2011 - Mar 2024).xlsb» og ukerapporten 11-06-2026. Begge ligger i
+git-historikken (commit 2eb93c4, mappen `raw-na/`) om historikken må bygges på
+nytt. Pivot-filen mangler GOM-kolonnen; den ble utledet som USA offshore i
+Louisiana, Texas, Alabama og Mississippi – regelen gir nøyaktig BHs GOM-tall i
+alle 149 uker i ukerapporten, og testes for hver ny rapport.
+
+Manuelt (lokalt): legg filen i `inbox/` og kjør `python scripts/rigcount.py build`.

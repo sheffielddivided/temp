@@ -2,13 +2,13 @@ name: Oppdater Worldwide Rig Count
 
 on:
   schedule:
-    # Baker Hughes publiserer internasjonale tall tidlig i måneden.
-    # Kjører daglig dag 2–14; uendret fil gir ingen commit.
-    - cron: "23 17 2-14 * *"
+    # Daglig: plukker opp ukerapporter i inbox-grenen (reserve hvis opplastings-
+    # siden ikke fikk startet kjøringen) og prøver å hente nye Worldwide-tall.
+    - cron: "23 17 * * *"
   push:
     branches: [main]
-    paths: ["raw/**", "raw-na/**", "scripts/**", "site/**", "tests/**", ".github/workflows/update.yml"]
-  workflow_dispatch:
+    paths: ["raw/**", "raw-na/**", "history/**", "scripts/**", "site/**", "tests/**", ".github/workflows/update.yml"]
+  workflow_dispatch:   # startes av opplastingssiden etter opplasting til inbox
 
 permissions:
   contents: write
@@ -24,32 +24,73 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest
-      - name: Test parser
-        run: python -m pytest -q tests
-      - name: Hent ny fil (kan bli blokkert av Akamai – gir da bare en advarsel)
-        run: python scripts/rigcount.py fetch
-      - name: Bygg data
+
+      # Ukerapporter lastes opp til grenen «inbox» (ikke main), så de store
+      # Excel-filene aldri havner i main-historikken. Her hentes de ut til ./inbox.
+      - name: Hent filer fra inbox
+        id: inbox
         run: |
-          if ls raw/*.xlsx >/dev/null 2>&1; then
-            python scripts/rigcount.py build
-          else
-            echo "::warning::Ingen fil i raw/ ennå – siden publiseres uten data."
+          if git fetch --depth=1 origin inbox 2>/dev/null; then
+            echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+            git archive FETCH_HEAD inbox 2>/dev/null | tar -x || true
           fi
+          if ls inbox/*.xls[xb] >/dev/null 2>&1; then
+            echo "files=true" >> "$GITHUB_OUTPUT"
+            echo "Filer i inbox:"; ls -la inbox
+          else
+            echo "Ingen nye filer i inbox."
+          fi
+
+      - name: Test (inkl. kontroll av nye filer mot BHs egen oppsummering)
+        run: python -m pytest -q tests
+
+      - name: Hent ny Worldwide-fil (blokkeres normalt av Akamai – gir bare en advarsel)
+        run: python scripts/rigcount.py fetch
+
+      - name: Bygg data (fletter inbox-filer inn i history/)
+        run: python scripts/rigcount.py build
+
+      - name: Test historikken etter fletting
+        run: python -m pytest -q tests/test_history.py
+
       - name: Commit endringer
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add raw raw-na data site/data 2>/dev/null || true
+          git add raw history data site/data
           if git diff --cached --quiet; then
             echo "Ingen endringer."
           else
-            git commit -m "Oppdater Worldwide Rig Count-data"
-            git push
+            msg="Oppdater rig count-data"
+            if [ "${{ steps.inbox.outputs.files }}" = "true" ]; then
+              msg="$msg: $(ls inbox | tr '\n' ' ')"
+            fi
+            git commit -m "$msg"
+            for i in 1 2 3; do git pull --rebase -q origin main && git push && break; sleep 5; done
           fi
+
+      # Tøm inbox: ny rot-commit uten filene, så de forsvinner fra repoet.
+      # --force-with-lease: lastet noen opp en ny fil mens vi jobbet, røres ikke
+      # inbox – neste kjøring tar den (og fletting er idempotent).
+      - name: Tøm inbox
+        if: steps.inbox.outputs.files == 'true'
+        run: |
+          readme=$(printf '%s\n' \
+            "# Innboks for Baker Hughes-ukerapporter" "" \
+            "Filer lastet opp hit behandles av workflowen «Oppdater Worldwide Rig Count»," \
+            "flettes inn i history/ på main, og fjernes deretter herfra." | git hash-object -w --stdin)
+          tree=$(printf '100644 blob %s\tREADME.md\n' "$readme" | git mktree)
+          commit=$(git commit-tree "$tree" -m "Tøm inbox")
+          git push --force-with-lease=refs/heads/inbox:${{ steps.inbox.outputs.sha }} origin "$commit:refs/heads/inbox" \
+            || echo "::warning::Inbox endret seg under kjøringen – tømmes neste gang."
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

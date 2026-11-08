@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import na  # noqa: E402
 
-FILES = sorted(p for p in (ROOT / "raw-na").glob("*") if p.suffix.lower() in (".xlsx", ".xlsb"))
+FILES = sorted(p for d in ("raw-na", "inbox") if (ROOT / d).exists() for p in (ROOT / d).glob("*")
+               if p.suffix.lower() in (".xlsx", ".xlsb"))
 SUMMARY_FILES = [p for p in FILES if p.suffix.lower() == ".xlsx"]
 
 

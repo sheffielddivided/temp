@@ -34,6 +34,8 @@ ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 DATA = ROOT / "data"
 SITE_DATA = ROOT / "site" / "data"
+NA_HISTORY = ROOT / "history" / "na_weekly.csv"
+NA_SOURCES = ROOT / "history" / "na_sources.json"
 
 PAGE_URL = "https://rigcount.bakerhughes.com/intl-rig-count"
 LINK_PATTERN = re.compile(r"worldwide", re.I)
@@ -309,7 +311,12 @@ def cmd_build() -> int:
     (SITE_DATA / "worldwide.json").write_text(json.dumps(to_site_json(rows, meta), separators=(",", ":")))
 
     import na
-    na.build(ROOT / "raw-na", DATA, SITE_DATA)
+    na_files = sorted(p for d in (ROOT / "raw-na", ROOT / "inbox") if d.exists()
+                      for p in d.glob("*") if p.suffix.lower() in (".xlsx", ".xlsb"))
+    if na_files:
+        for line in na.ingest(na_files, NA_HISTORY, NA_SOURCES):
+            print("  " + line)
+    na.build(NA_HISTORY, NA_SOURCES, SITE_DATA)
 
     last = [r for r in rows if r["date"] == meta["last"]]
     print(f"Totalt {len(rows)} rader, {meta['first']} – {meta['last']}, "

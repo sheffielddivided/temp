@@ -197,33 +197,86 @@ def to_site_json(rows: list[dict], meta: dict) -> dict:
     return out
 
 
-def build(raw_dir: Path, data_dir: Path, site_data: Path) -> None:
-    files = sorted(p for p in raw_dir.glob("*") if p.suffix.lower() in (".xlsx", ".xlsb")) if raw_dir.exists() else []
-    if not files:
-        print("Ingen North America-filer i raw-na/ – hopper over ukesdata.")
-        return
-    parsed = []
-    for f in files:
-        rows = parse_file(f)
-        print(f"  {f.name}: {len(rows)} rader, {min(r['date'] for r in rows)} – {max(r['date'] for r in rows)}")
-        parsed.append(rows)
-    rows = merge(parsed)
-    agg: dict[tuple, float] = defaultdict(float)
-    for r in rows:
-        agg[tuple(r[k] for k in FIELDS[:-1])] += r["rigs"]
-    data_dir.mkdir(exist_ok=True)
-    with (data_dir / "na_weekly_long.csv").open("w", newline="") as fh:
-        w = csv.writer(fh)
+# ------------------------------------------------------------------ historikk
+# history/na_weekly.csv er kilden til sannhet for ukedataene: én rad per uke ×
+# land × delstat × basseng × GOM × type × lokasjon × brønnbane (uten county).
+# history/na_sources.json sier hvilken rapport hver uke kommer fra, slik at en
+# eldre rapport aldri overskriver tall fra en nyere (BH reviderer av og til).
+
+KEYS = FIELDS[:-1]
+
+
+def _num(v: float):
+    return int(v) if float(v).is_integer() else round(v, 3)
+
+
+def load_history(history: Path) -> dict[str, dict[tuple, float]]:
+    weeks: dict[str, dict[tuple, float]] = defaultdict(dict)
+    if history.exists():
+        with history.open(newline="") as fh:
+            for r in csv.DictReader(fh):
+                weeks[r["date"]][tuple(r[k] for k in KEYS[1:])] = float(r["rigs"])
+    return weeks
+
+
+def save_history(history: Path, weeks: dict[str, dict[tuple, float]]) -> None:
+    history.parent.mkdir(exist_ok=True)
+    tmp = history.with_suffix(".tmp")
+    with tmp.open("w", newline="") as fh:
+        w = csv.writer(fh, lineterminator="\n")
         w.writerow(FIELDS)
-        for k, v in agg.items():
-            w.writerow([*k, int(v) if float(v).is_integer() else round(v, 3)])
-    latest = max(zip(files, parsed), key=lambda fp: max(r["date"] for r in fp[1]))[0]
-    meta = {"files": [f.name for f in files], "latest_file": latest.name,
-            "first": rows[0]["date"], "last": rows[-1]["date"]}
+        for d in sorted(weeks):
+            for k in sorted(weeks[d]):
+                w.writerow([d, *k, _num(weeks[d][k])])
+    tmp.replace(history)
+
+
+def ingest(files: list[Path], history: Path, sources_path: Path) -> list[str]:
+    """Flett rapporter inn i historikken. Returnerer en linje per fil til loggen."""
+    weeks = load_history(history)
+    sources = json.loads(sources_path.read_text()) if sources_path.exists() else {}
+    log = []
+    parsed = [(f, parse_file(f)) for f in files]
+    for f, rows in sorted(parsed, key=lambda fp: max(r["date"] for r in fp[1])):
+        last = max(r["date"] for r in rows)
+        agg: dict[str, dict[tuple, float]] = defaultdict(lambda: defaultdict(float))
+        for r in rows:
+            agg[r["date"]][tuple(r[k] for k in KEYS[1:])] += r["rigs"]
+        new = upd = skip = 0
+        for d, data in agg.items():
+            prev = sources.get(d)
+            if prev and prev["report_last"] > last:
+                skip += 1
+                continue
+            if d not in weeks:
+                new += 1
+            elif weeks[d] != dict(data):
+                upd += 1
+            weeks[d] = dict(data)
+            sources[d] = {"report_last": last, "file": f.name}
+        log.append(f"{f.name}: {len(agg)} uker ({min(agg)} – {last}); {new} nye, {upd} reviderte, "
+                   f"{skip} hoppet over (nyere rapport finnes)")
+    save_history(history, weeks)
+    # Én linje per uke, så diffene i git blir små og lesbare.
+    lines = [f"  {json.dumps(d)}: {json.dumps(sources[d], ensure_ascii=False)}" for d in sorted(sources)]
+    sources_path.write_text("{\n" + ",\n".join(lines) + "\n}\n")
+    return log
+
+
+def build(history: Path, sources_path: Path, site_data: Path) -> None:
+    weeks = load_history(history)
+    if not weeks:
+        print("Ingen ukesdata i history/ – hopper over.")
+        return
+    rows = [dict(zip(KEYS, (d, *k)), rigs=v) for d in sorted(weeks) for k, v in weeks[d].items()]
+    sources = json.loads(sources_path.read_text()) if sources_path.exists() else {}
+    files = sorted({s["file"] for s in sources.values()})
+    latest = sources[max(sources)]["file"] if sources else ""
+    meta = {"files": files, "latest_file": latest, "first": rows[0]["date"], "last": rows[-1]["date"]}
     site_data.mkdir(parents=True, exist_ok=True)
     (site_data / "na.json").write_text(json.dumps(to_site_json(rows, meta), separators=(",", ":")))
     last = [r for r in rows if r["date"] == meta["last"]]
     us = sum(r["rigs"] for r in last if r["country"] == "United States")
     ca = sum(r["rigs"] for r in last if r["country"] == "Canada")
     print(f"North America: {len(rows)} rader, {meta['first']} – {meta['last']} "
-          f"({len({r['date'] for r in rows})} uker). Siste uke: USA {us:g}, Canada {ca:g}")
+          f"({len(weeks)} uker). Siste uke: USA {us:g}, Canada {ca:g}")

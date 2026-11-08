@@ -43,7 +43,7 @@
   <nav class="nav"><a href="./">Graf</a><a href="map.html">Kart</a><a href="us.html">USA</a><a href="upload.html" aria-current="page">Last opp</a></nav>
   <header class="page-head">
     <h1>Last opp ny månedsfil</h1>
-    <p class="sub">Excel-filer fra Baker Hughes legges i GitHub-repoet: Worldwide-filer i <code>raw/</code>, North America-filer i <code>raw-na/</code> (gjenkjennes på filnavnet). Siden oppdateres automatisk etter et par minutter.</p>
+    <p class="sub">Excel-filer fra Baker Hughes legges i GitHub-repoet: Worldwide-filer i <code>raw/</code>. North America-ukerapporter (gjenkjennes på filnavnet) legges i en innboks, flettes inn i ukehistorikken og slettes deretter, så repoet ikke vokser. Siden oppdateres automatisk etter et par minutter.</p>
   </header>
 
   <section class="card up-card">
@@ -66,7 +66,7 @@
       <ol class="help">
         <li>GitHub → Settings → Developer settings → Personal access tokens → <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained tokens → Generate new token</a>.</li>
         <li>Repository access: <strong>Only select repositories</strong> → <code id="repo-name"></code>.</li>
-        <li>Permissions → Repository permissions → <strong>Contents: Read and write</strong>. Ingenting annet.</li>
+        <li>Permissions → Repository permissions → <strong>Contents: Read and write</strong> og <strong>Actions: Read and write</strong> (for å starte behandlingen av ukerapporter). Ingenting annet.</li>
         <li>Velg en utløpsdato (f.eks. 1 år), generer og lim inn over.</li>
       </ol>
       <p style="margin-top:8px;font-size:13px">Tokenet sendes bare til api.github.com og lagres aldri i repoet. Uten avkrysning glemmes det når fanen lukkes.</p>
@@ -92,9 +92,12 @@
 "use strict";
 const REPO = "sheffielddivided/temp";   // eier/repo
 const BRANCH = "main";
-const DIR = "raw";        // Worldwide-filer
-const DIR_NA = "raw-na";  // North America-filer (gjenkjennes på filnavnet)
-const targetDir = (name) => (/north[\s_-]*america/i.test(name) ? DIR_NA : DIR);
+const DIR = "raw";             // Worldwide-filer (små) → main/raw/
+const INBOX = "inbox";         // North America-ukerapporter (store) → grenen «inbox»,
+                               // flettes inn i history/ og slettes, så main holdes liten
+const WORKFLOW = "update.yml";
+const isNA = (name) => /north[\s_-]*america/i.test(name);
+const target = (name) => (isNA(name) ? { dir: INBOX, branch: INBOX } : { dir: DIR, branch: BRANCH });
 const API = `https://api.github.com/repos/${REPO}`;
 const KEY = "rigcount-upload-token";
 
@@ -133,7 +136,7 @@ async function pick(f) {
   if (head[0] !== 0x50 || head[1] !== 0x4b) return setStatus("Filen ser ikke ut som en gyldig Excel-fil.", "err");
   file = f;
   $("file-info").textContent = `${f.name} · ${(f.size / 1024).toFixed(0)} KB`;
-  if (targetDir(f.name) === DIR_NA) setStatus(`North America-fil – legges i ${DIR_NA}/ (ukentlige USA/Canada-tall).`);
+  if (isNA(f.name)) setStatus("North America-ukerapport – legges i innboksen, flettes inn i ukehistorikken og slettes deretter.");
   else if (!/worldwide/i.test(f.name)) setStatus("Filnavnet inneholder verken «Worldwide» eller «North America» – sjekk at det er riktig fil. Den legges i raw/ og kontrolleres før publisering.");
   else setStatus(`Worldwide-fil – legges i ${DIR}/.`);
   update();
@@ -171,7 +174,7 @@ btn.addEventListener("click", async () => {
   btn.disabled = true;
   try {
     const name = file.name.trim().replace(/[\\/]/g, "_");
-    const dir = targetDir(name);
+    const { dir, branch } = target(name);
     const path = `${dir}/${name}`;
     const urlPath = `/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
 
@@ -180,9 +183,10 @@ btn.addEventListener("click", async () => {
     if (repo.status === 401) throw new Error("Tokenet er ugyldig eller utløpt.");
     if (!repo.ok) throw new Error(`Fant ikke repoet ${REPO} med dette tokenet (HTTP ${repo.status}). Sjekk at tokenet har tilgang til repoet.`);
 
-    const existing = await gh(`${urlPath}?ref=${BRANCH}`);
+    const existing = await gh(`${urlPath}?ref=${branch}`);
     let sha;
     if (existing.ok && existing.data && existing.data.sha) {
+      if (dir === INBOX) { setStatus(`${esc(name)} ligger allerede i innboksen og venter på behandling.`); return; }
       if (!confirm(`${name} finnes allerede i ${dir}/. Erstatte den?`)) { setStatus("Avbrutt."); return; }
       sha = existing.data.sha;
     }
@@ -191,15 +195,25 @@ btn.addEventListener("click", async () => {
     const content = b64(await file.arrayBuffer());
     const res = await gh(urlPath, {
       method: "PUT",
-      body: JSON.stringify({ message: `Ny rig count-fil: ${name}`, content, branch: BRANCH, ...(sha ? { sha } : {}) }),
+      body: JSON.stringify({ message: `Ny rig count-fil: ${name}`, content, branch, ...(sha ? { sha } : {}) }),
     });
     if (res.status === 403 || res.status === 404) throw new Error("Tokenet mangler skrivetilgang (Contents: Read and write).");
     if (!res.ok) throw new Error((res.data && res.data.message) || `Opplasting feilet (HTTP ${res.status}).`);
 
     const commit = res.data.commit && res.data.commit.html_url;
+    // Innboks-filer: start behandlingen nå (krever «Actions: Read and write» på tokenet).
+    let started = true;
+    if (dir === INBOX) {
+      setStatus("Starter behandling …");
+      const run = await gh(`/actions/workflows/${WORKFLOW}/dispatches`, { method: "POST", body: JSON.stringify({ ref: BRANCH }) });
+      started = run.status === 204;
+    }
     setStatus(
-      `Lastet opp ${esc(name)}.\n` +
-      `Bygging og publisering starter nå og tar normalt 1–3 minutter. ` +
+      `Lastet opp ${esc(name)}${dir === INBOX ? " til innboksen" : ""}.\n` +
+      (started
+        ? `Bygging og publisering starter nå og tar normalt 1–3 minutter. `
+        : `Fikk ikke startet behandlingen automatisk (tokenet mangler «Actions: Read and write»). ` +
+          `Filen behandles ved neste daglige kjøring, eller start «Oppdater Worldwide Rig Count» manuelt i Actions. `) +
       `<a href="https://github.com/${REPO}/actions" target="_blank" rel="noopener">Følg med i GitHub Actions</a>` +
       (commit ? ` · <a href="${esc(commit)}" target="_blank" rel="noopener">se commit</a>` : "") +
       `.\nHvis filen har et format parseren ikke kjenner, stopper bygget før noe publiseres – grafen viser da fortsatt forrige data.`,
