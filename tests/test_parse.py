@@ -1,80 +1,93 @@
-"""Tester parseren mot syntetiske arbeidsbøker i to sannsynlige layouter.
+"""Tester parseren.
 
-Kjør: python -m pytest tests  (eller: python tests/test_parse.py)
-NB: Ekte Baker Hughes-filer kan se annerledes ut – legg gjerne til en test
-med en ekte fil i raw/ når den foreligger.
+Kjør: python -m pytest -q tests
+
+test_real_files_match_summary sjekker HVER fil i raw/ mot Baker Hughes' egen
+oppsummering øverst i «WW Monthly» (regionsummer per måned). Hvis BH endrer
+layout eller tallene ikke lenger summerer, feiler workflowen før noe publiseres.
 """
-import datetime as dt
 import sys
 import tempfile
 from pathlib import Path
 
 import openpyxl
+import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
 import rigcount  # noqa: E402
 
-MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+HEADER = ["Region", "Country", "DrillFor", "Location", "Rig Status", "Year", "Month", "Rig Count Value"]
+REAL_FILES = sorted((ROOT / "raw").glob("*.xlsx"))
 
 
-def layout_a(ws, year):
-    """Én fane per år, seksjonsoverskrift, regionoverskrift før land, total etter."""
-    ws.append([f"Worldwide Rig Count {year}"])
-    ws.append([])
-    ws.append(["LAND"])
-    ws.append(["", *MON, "Avg"])
-    ws.append(["Latin America"])
-    ws.append(["Argentina", *[50 + i for i in range(12)], 55.5])
-    ws.append(["Brazil", *[10] * 12, 10])
-    ws.append(["Total Latin America", *[60 + i for i in range(12)], 65.5])
-    ws.append(["Europe"])
-    ws.append(["Norway", *[15] * 12, 15])
-    ws.append(["Total Europe", *[15] * 12, 15])
-    ws.append(["Canada", *[150] * 12, 150])
-    ws.append(["United States", *[600] * 12, 600])
-    ws.append(["Total World", *[825 + i for i in range(12)], 830])
-
-
-def layout_b(ws):
-    """Header med datoer, landene før regionsummen uten overskrift."""
-    ws.append(["Country", *[dt.datetime(2025, m, 1) for m in range(1, 13)]])
-    ws.append(["Algeria", *[30] * 12])
-    ws.append(["Nigeria", *[12] * 12])
-    ws.append(["Africa", *[42] * 12])
-    ws.append(["Saudi Arabia", *[80] * 12])
-    ws.append(["Middle East", *[80] * 12])
-
-
-def _build(fill):
+def _wb(rows, path):
     wb = openpyxl.Workbook()
-    fill(wb)
+    ws = wb.active
+    ws.title = "WW Monthly"
+    ws.append([None, None, "WORLDWIDE Monthly"])
+    for _ in range(9):
+        ws.append([])
+    ws.append([])
+    ws.append(HEADER)
+    for r in rows:
+        ws.append(r)
+    wb.save(path)
+    return path
+
+
+def test_parse_synthetic():
     d = Path(tempfile.mkdtemp())
-    p = d / "t.xlsx"
-    wb.save(p)
-    return rigcount.tidy(rigcount.parse_workbook(p))
+    p = _wb([
+        ["Asia-Pacific", "CONGO, THE DEMOCRATIC REPUBLIC OF THE", "Oil", "Inland waters", "Active Rigs", 2026, 3, 2],
+        ["Middle East", "SAUDI ARABIA", "Gas", "Land", "Operating Rigs", 2026, 3, 40.5],
+    ], d / "a.xlsx")
+    rows = rigcount.parse_workbook(p)
+    assert rows[0]["region"] == "Asia Pacific"
+    assert rows[0]["country"] == "Congo, the Democratic Republic of the"
+    assert rigcount._title("UAE - ABU DHABI") == "UAE - Abu Dhabi"
+    assert rows[0]["location"] == "Inland Waters" and rows[0]["date"] == "2026-03"
+    assert rows[1]["rigs"] == 40.5 and rows[1]["status"] == "Operating Rigs"
 
 
-def test_layout_a():
-    def fill(wb):
-        layout_a(wb.active, 2024)
-        wb.active.title = "2024"
-        layout_a(wb.create_sheet("2023"), 2023)
-    rows = _build(fill)
-    arg = [r for r in rows if r["name"] == "Argentina" and r["date"] == "2024-03"]
-    assert arg and arg[0]["rigs"] == 52 and arg[0]["region"] == "Latin America" and arg[0]["section"] == "Land"
-    assert any(r["level"] == "region" and r["name"] == "United States" and r["date"] == "2023-12" for r in rows)
-    assert [r for r in rows if r["name"] == "Norway"][0]["region"] == "Europe"
-    world = [r for r in rows if r["level"] == "world" and r["date"] == "2024-12"]
-    assert world[0]["rigs"] == 836
-    assert not any(r["name"].lower() == "avg" for r in rows)
-    assert len({r["date"] for r in rows}) == 24
+def test_missing_header_fails_loudly():
+    d = Path(tempfile.mkdtemp())
+    wb = openpyxl.Workbook()
+    wb.active.title = "WW Monthly"
+    wb.active.append(["Region", "Land", "Year"])
+    wb.save(d / "bad.xlsx")
+    with pytest.raises(ValueError, match="overskriftsraden"):
+        rigcount.parse_workbook(d / "bad.xlsx")
 
 
-def test_layout_b():
-    rows = _build(lambda wb: layout_b(wb.active))
-    alg = [r for r in rows if r["name"] == "Algeria"][0]
-    assert alg["region"] == "Africa" and alg["date"] == "2025-01"
-    assert [r for r in rows if r["name"] == "Saudi Arabia"][0]["region"] == "Middle East"
+def test_merge_newer_file_wins_and_history_kept():
+    old = [dict(date="2023-12", region="Europe", country="Norway", drill_for="Oil", location="Offshore", status="Active Rigs", rigs=10, file="old"),
+           dict(date="2024-01", region="Europe", country="Norway", drill_for="Oil", location="Offshore", status="Active Rigs", rigs=11, file="old")]
+    new = [dict(date="2024-01", region="Europe", country="Norway", drill_for="Oil", location="Offshore", status="Active Rigs", rigs=12, file="new"),
+           dict(date="2024-02", region="Europe", country="Norway", drill_for="Oil", location="Offshore", status="Active Rigs", rigs=13, file="new")]
+    rows = rigcount.merge([new, old])
+    assert [(r["date"], r["rigs"]) for r in rows] == [("2023-12", 10), ("2024-01", 12), ("2024-02", 13)]
+
+
+def test_find_breaks():
+    mk = lambda d, st: dict(date=d, region="Middle East", country="Saudi Arabia", drill_for="Oil",
+                            location="Land", status=st, rigs=1, file="x")
+    rows = [mk("2023-11", "Active Rigs"), mk("2023-12", "Active Rigs"),
+            mk("2024-01", "Operating Rigs"), mk("2024-02", "Operating Rigs")]
+    assert rigcount.find_breaks(rows) == [
+        {"date": "2024-01", "country": "Saudi Arabia", "from": "Active Rigs", "to": "Operating Rigs"}]
+
+
+def test_parse_without_status_column():
+    d = Path(tempfile.mkdtemp())
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "WW Monthly"
+    ws.append(["Region", "Country", "DrillFor", "Location", "Year", "Month", "Rig Count Value"])
+    ws.append(["Africa", "ALGERIA", "Gas", "Land", 2013, 1, 16])
+    wb.save(d / "old.xlsx")
+    rows = rigcount.parse_workbook(d / "old.xlsx")
+    assert rows[0]["status"] == "Active Rigs" and rows[0]["date"] == "2013-01"
 
 
 def test_find_link():
@@ -84,5 +97,41 @@ def test_find_link():
         "https://rigcount.bakerhughes.com/static-files/1234-uuid"
 
 
+def _summary(path):
+    """Regionsummene i toppen av «WW Monthly»: {(region, 'YYYY-MM'): verdi}."""
+    import datetime as dt
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    out, dates = {}, None
+    for r in wb["WW Monthly"].iter_rows(max_row=11, values_only=True):
+        if "Region" in r:
+            i = r.index("Region")
+            dates = [(j, c) for j, c in enumerate(r) if isinstance(c, dt.datetime)]
+            continue
+        if dates and r[i]:
+            for j, d in dates:
+                if isinstance(r[j], (int, float)) and r[j]:
+                    out[(rigcount.REGION_NAMES.get(r[i].lower(), r[i]), f"{d.year:04d}-{d.month:02d}")] = r[j]
+    wb.close()
+    return out
+
+
+@pytest.mark.skipif(not REAL_FILES, reason="ingen filer i raw/")
+@pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
+def test_real_files_match_summary(path):
+    rows = rigcount.parse_workbook(path)
+    summary = _summary(path)
+    assert summary, "fant ikke oppsummeringen øverst i WW Monthly"
+    totals = {}
+    for r in rows:
+        for key in (r["region"], "Worldwide", None if r["region"] == "North America" else "International"):
+            if key:
+                totals[(key, r["date"])] = totals.get((key, r["date"]), 0) + r["rigs"]
+    checked = 0
+    for k, v in summary.items():
+        assert totals.get(k) == pytest.approx(v, abs=0.01), k
+        checked += 1
+    assert checked >= 40
+
+
 if __name__ == "__main__":
-    test_layout_a(); test_layout_b(); test_find_link(); print("OK")
+    sys.exit(pytest.main([__file__, "-q"]))

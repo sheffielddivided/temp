@@ -4,9 +4,9 @@ Månedlig import av Baker Hughes **Worldwide Rig Count** og en statisk nettside
 (GitHub Pages) som visualiserer antall rigger per region og land.
 
 ```
-raw/                 nedlastede xlsx-filer (nyeste brukes)
+raw/                 alle nedlastede xlsx-filer (= historikken)
 scripts/rigcount.py  fetch / ingest / build
-data/                worldwide_long.csv – ryddig «long»-format
+data/                worldwide_long.csv – én rad per måned/land/type/lokasjon
 site/                nettsiden (index.html, app.js, style.css, data/worldwide.json)
 tests/               parsertester
 ```
@@ -18,7 +18,7 @@ måned, ved push til `raw/`, `scripts/` eller `site/`, og manuelt:
 
 1. `fetch` – henter rigcount.bakerhughes.com/intl-rig-count, finner
    Worldwide-lenken og laster ned filen hvis innholdet er nytt.
-2. `build` – parser nyeste fil i `raw/` til `data/worldwide_long.csv` og
+2. `build` – parser og slår sammen alle filer i `raw/` til `data/worldwide_long.csv` og
    `site/data/worldwide.json`.
 3. Endringer committes, og `site/` publiseres til GitHub Pages.
 
@@ -32,8 +32,8 @@ Manuell oppdatering (tar et minutt i måneden):
 
 1. Last ned Worldwide Rig Count-filen fra
    https://rigcount.bakerhughes.com/intl-rig-count
-2. Enten last den opp via GitHub-nettsiden til `raw/` med navnet
-   `ÅÅÅÅ-MM-DD_worldwide.xlsx`, eller lokalt:
+2. Enten last den opp via GitHub-nettsiden til `raw/` (filnavnet spiller
+   ingen rolle), eller lokalt:
    ```bash
    python scripts/rigcount.py ingest ~/Downloads/Worldwide*.xlsx
    git add raw && git commit -m "Ny rig count-fil" && git push
@@ -58,10 +58,23 @@ python scripts/rigcount.py build
 python -m http.server -d site 8000
 ```
 
-## Parseren
+## Parseren og historikk
 
-Excel-layouten fra Baker Hughes er ikke dokumentert og har endret seg før.
-Parseren leter derfor etter overskriftsrader med månedsnavn/datoer, finner
-år fra fane- eller titteltekst, og kjenner igjen seksjoner (Land/Offshore/Total),
-regioner og land. Hvis `build` melder «Fant ingen data», må `_parse_sheet()`
-justeres mot den faktiske filen.
+`build` leser detaljtabellen i fanen **«WW Monthly»** (kolonnene Region,
+Country, DrillFor, Location, Rig Status, Year, Month, Rig Count Value).
+
+- Hver månedsfil dekker bare ca. de siste 34 månedene. `build` slår derfor
+  sammen **alle** filer i `raw/`; for overlappende måneder vinner filen med
+  senest innhold. **Slett ikke gamle filer** – de er historikken.
+- Saudi-Arabia rapporteres som «Operating Rigs», øvrige land som
+  «Active Rigs». Begge tas med, slik Baker Hughes' egne totaler gjør.
+- **Metodebrudd:** BH har revidert Saudi-Arabia til «Operating Rigs» bakover
+  bare til jan 2024 (~300 mot ~85 «Active Rigs» tidligere). Sammenslåtte
+  serier får derfor et hopp på ~220 rigger i Midtøsten/verden i jan 2024.
+  `build` oppdager slike statusskifter automatisk og nettsiden markerer dem.
+- Eldre filer (f.eks. juli 2025) mangler «Rig Status»-kolonnen; da antas
+  «Active Rigs». Juli 2025-filen går tilbake til jan 2013.
+- «Land» på nettsiden inkluderer Inland Waters (som BHs oppsummering).
+- Testen `test_real_files_match_summary` sjekker hver fil i `raw/` mot BHs
+  egen regionoppsummering øverst i fanen. Endrer BH layouten, feiler
+  workflowen før noe publiseres.

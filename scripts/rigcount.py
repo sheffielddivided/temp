@@ -4,11 +4,16 @@
 Bruk:
   python scripts/rigcount.py fetch          # last ned nyeste Worldwide-fil til raw/ (hvis ny)
   python scripts/rigcount.py ingest FIL     # legg inn en manuelt nedlastet fil i raw/
-  python scripts/rigcount.py build          # parse nyeste fil i raw/ -> data/ og site/data/
+  python scripts/rigcount.py build          # slå sammen alle filer i raw/ -> data/ og site/data/
 
-Kilden (rigcount.bakerhughes.com) ligger bak Akamai og blokkerer ofte
-datasenter-IP-er (inkl. GitHub Actions). Derfor: hvis `fetch` får 403,
-avslutter den uten feil og `build` bruker siste fil som ligger i raw/.
+Hver månedsfil fra Baker Hughes dekker bare ca. de siste 34 månedene
+(fanen «WW Monthly»). `build` slår derfor sammen ALLE filer i raw/; for
+måneder som finnes i flere filer vinner den nyeste filen (den med senest
+måned i innholdet). Ta vare på filene – de er historikken.
+
+Kilden (rigcount.bakerhughes.com) ligger bak Akamai og blokkerer
+datasenter-IP-er (inkl. GitHub Actions). Hvis `fetch` får 403 avslutter
+den uten feil, og `build` bruker filene som allerede ligger i raw/.
 """
 from __future__ import annotations
 
@@ -22,6 +27,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,32 +42,26 @@ UA = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-MONTHS = {
-    m: i + 1
-    for i, names in enumerate(
-        [
-            ("jan", "january"), ("feb", "february"), ("mar", "march"),
-            ("apr", "april"), ("may",), ("jun", "june"), ("jul", "july"),
-            ("aug", "august"), ("sep", "sept", "september"),
-            ("oct", "october"), ("nov", "november"), ("dec", "december"),
-        ]
-    )
-    for m in names
+SHEET = "WW Monthly"
+# Kolonnene i detaljtabellen (overskriftsraden, ca. rad 12 i «WW Monthly»).
+COLUMNS = {
+    "region": "region",
+    "country": "country",
+    "drillfor": "drill_for",
+    "location": "location",
+    "rig status": "status",
+    "year": "year",
+    "month": "month",
+    "rig count value": "rigs",
 }
+# «Rig Status» finnes ikke i eldre filer (f.eks. juli 2025).
+OPTIONAL = {"rig status"}
+FIELDS = ["date", "region", "country", "drill_for", "location", "status", "rigs", "file"]
 
-# Kanoniske regionnavn og variantene vi gjenkjenner i filene.
-REGIONS = {
-    "Latin America": ["latin america", "south america"],
-    "Europe": ["europe"],
-    "Africa": ["africa"],
-    "Middle East": ["middle east"],
-    "Asia Pacific": ["asia pacific", "asia-pacific", "far east", "asia"],
-    "Canada": ["canada"],
-    "United States": ["united states", "u.s.", "us", "usa"],
-}
-TOTAL_LABELS = ["total world", "worldwide", "world total", "total worldwide", "grand total"]
-INTL_LABELS = ["total international", "international total", "international"]
-SECTIONS = {"land": "Land", "offshore": "Offshore", "total": "Total", "onshore": "Land"}
+REGION_NAMES = {"asia-pacific": "Asia Pacific"}
+LOCATION_NAMES = {"inland waters": "Inland Waters", "land": "Land", "offshore": "Offshore"}
+SMALL_WORDS = {"of", "the", "and", "da", "de", "du"}
+ACRONYMS = {"uae": "UAE", "usa": "USA", "uk": "UK", "us": "US"}
 
 
 # ---------------------------------------------------------------- fetch
@@ -86,7 +86,7 @@ def cmd_fetch() -> int:
         page = _get(PAGE_URL).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         print(f"::warning::Klarte ikke hente {PAGE_URL}: HTTP {e.code}. "
-              "Bruker eksisterende fil i raw/ (legg inn manuelt med `ingest`).")
+              "Bruker filene som ligger i raw/ (legg inn nye manuelt).")
         return 0
     except urllib.error.URLError as e:
         print(f"::warning::Nettverksfeil mot {PAGE_URL}: {e.reason}")
@@ -96,8 +96,7 @@ def cmd_fetch() -> int:
         print("::error::Fant ingen Worldwide-lenke på siden – sidestrukturen har trolig endret seg.")
         return 1
     print(f"Laster ned {url}")
-    blob = _get(url)
-    return _store(blob, source=url)
+    return _store(_get(url), source=url)
 
 
 def cmd_ingest(path: str) -> int:
@@ -106,7 +105,7 @@ def cmd_ingest(path: str) -> int:
 
 def _store(blob: bytes, source: str) -> int:
     if not blob.startswith(b"PK"):
-        print("::error::Nedlastet innhold er ikke en xlsx-fil.")
+        print("::error::Innholdet er ikke en xlsx-fil.")
         return 1
     digest = hashlib.sha256(blob).hexdigest()
     RAW.mkdir(exist_ok=True)
@@ -123,162 +122,135 @@ def _store(blob: bytes, source: str) -> int:
 
 # ---------------------------------------------------------------- parse
 
-def _norm(s) -> str:
-    return re.sub(r"\s+", " ", str(s)).strip()
+def _title(s: str) -> str:
+    words = re.split(r"(\s+|-|,)", s.strip().lower())
+    out = []
+    for i, w in enumerate(words):
+        out.append(ACRONYMS.get(w) or (w if (i and w in SMALL_WORDS) else w[:1].upper() + w[1:]))
+    return "".join(out)
 
 
-def _region_of(label: str) -> str | None:
-    key = re.sub(r"^total\s+|\s+total$", "", label.lower()).strip(" :")
-    for canon, variants in REGIONS.items():
-        if key in variants:
-            return canon
-    return None
-
-
-def _is_any(label: str, options) -> bool:
-    return label.lower().strip(" :") in options
-
-
-def _month_of(cell) -> tuple[int | None, int | None]:
-    """(måned, år) fra en headercelle – datetime, 'Jan', 'Jan 2024', 'Jan-24' osv."""
-    if isinstance(cell, (dt.datetime, dt.date)):
-        return cell.month, cell.year
-    if not isinstance(cell, str):
-        return None, None
-    m = re.fullmatch(r"([A-Za-z]+)\.?(?:[\s\-/']+(\d{2,4}))?", cell.strip())
-    if not m or m.group(1).lower() not in MONTHS:
-        return None, None
-    year = m.group(2)
-    if year:
-        year = int(year)
-        year += 2000 if year < 100 and year < 50 else (1900 if year < 100 else 0)
-    return MONTHS[m.group(1).lower()], year
-
-
-def _year_hint(*texts) -> int | None:
-    for t in texts:
-        if t is None:
-            continue
-        m = re.search(r"\b(19[5-9]\d|20\d\d)\b", str(t))
-        if m:
-            return int(m.group(1))
-    return None
+def _key(c) -> str:
+    return re.sub(r"\s+", " ", str(c or "")).strip().lower()
 
 
 def parse_workbook(path: Path) -> list[dict]:
+    """Leser detaljtabellen i «WW Monthly». Feiler tydelig hvis layouten er endret."""
     import openpyxl
+    import warnings
 
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    out: list[dict] = []
-    for ws in wb.worksheets:
-        rows = [list(r) for r in ws.iter_rows(values_only=True)]
-        out.extend(_parse_sheet(ws.title, rows))
-    wb.close()
-    return out
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        if SHEET not in wb.sheetnames:
+            raise ValueError(f"{path.name}: fant ikke fanen «{SHEET}» (faner: {wb.sheetnames})")
+        cols = None
+        out = []
+        for r in wb[SHEET].iter_rows(values_only=True):
+            if cols is None:
+                keys = [_key(c) for c in r]
+                if all(k in keys for k in COLUMNS if k not in OPTIONAL):
+                    cols = {COLUMNS[k]: keys.index(k) for k in COLUMNS if k in keys}
+                continue
+            rec = {name: r[i] if i < len(r) else None for name, i in cols.items()}
+            rec.setdefault("status", None)
+            if rec["region"] is None and rec["country"] is None:
+                continue
+            if not isinstance(rec["year"], int) or not isinstance(rec["month"], int):
+                raise ValueError(f"{path.name}: uventet år/måned i rad {r[:8]}")
+            v = rec["rigs"]
+            out.append({
+                "date": f'{rec["year"]:04d}-{rec["month"]:02d}',
+                "region": REGION_NAMES.get(_key(rec["region"]), str(rec["region"]).strip()),
+                "country": _title(str(rec["country"])),
+                "drill_for": str(rec["drill_for"] or "").strip(),
+                "location": LOCATION_NAMES.get(_key(rec["location"]), str(rec["location"] or "").strip()),
+                "status": str(rec["status"] or "Active Rigs").strip(),  # eldre filer mangler kolonnen
+                "rigs": round(float(v), 3) if isinstance(v, (int, float)) else 0.0,
+                "file": path.name,
+            })
+        if cols is None:
+            raise ValueError(f"{path.name}: fant ikke overskriftsraden {[k for k in COLUMNS if k not in OPTIONAL]} i «{SHEET}»")
+        if not out:
+            raise ValueError(f"{path.name}: detaljtabellen i «{SHEET}» er tom")
+        return out
+    finally:
+        wb.close()
 
 
-def _parse_sheet(title: str, rows: list[list]) -> list[dict]:
-    records: list[dict] = []
-    header = None  # {col: (month, year)}
-    section = "Total"
-    region = None
-    pending: list[dict] = []  # land uten region (hvis regionsummen kommer etter landene)
-    context_text: list[str] = [title]
+def merge(files: list[list[dict]]) -> list[dict]:
+    """Slå sammen flere filer. For hver måned brukes radene fra filen med senest innhold."""
+    ordered = sorted(files, key=lambda rows: max(r["date"] for r in rows))
+    by_month: dict[str, list[dict]] = {}
+    for rows in ordered:
+        months = defaultdict(list)
+        for r in rows:
+            months[r["date"]].append(r)
+        by_month.update(months)  # nyere fil overskriver hele måneden
+    return sorted(
+        (r for d in sorted(by_month) for r in by_month[d]),
+        key=lambda r: (r["date"], r["region"], r["country"], r["drill_for"], r["location"], r["status"]),
+    )
 
+
+# ---------------------------------------------------------------- site-data
+
+def find_breaks(rows: list[dict]) -> list[dict]:
+    """Metodebrudd: land der «Rig Status» skifter fra én måned til den neste.
+
+    Eks.: Saudi-Arabia er «Active Rigs» t.o.m. des 2023 i eldre filer, men
+    «Operating Rigs» fra jan 2024 i nyere filer (BH revidert bakover) – et
+    hopp på ~220 rigger som ikke er reell aktivitet.
+    """
+    status: dict[str, dict[str, set]] = defaultdict(lambda: defaultdict(set))
     for r in rows:
-        cells = [c for c in r]
-        months = {i: _month_of(c) for i, c in enumerate(cells)}
-        months = {i: v for i, v in months.items() if v[0]}
-        if len(months) >= 6:
-            year = _year_hint(*[c for c in cells if not _month_of(c)[0]], *reversed(context_text))
-            header = {i: (m, y or year) for i, (m, y) in months.items()}
-            if any(y is None for _, y in header.values()):
-                header = None  # kan ikke tidfeste – hopp over blokken
-            region, pending = None, []
-            continue
-        strings = [_norm(c) for c in cells if isinstance(c, str) and _norm(c)]
-        if strings:
-            context_text.append(" ".join(strings))
-        if not header:
-            sec = next((SECTIONS[s.lower()] for s in strings if s.lower() in SECTIONS), None)
-            if sec:
-                section = sec
-            continue
-
-        first_month_col = min(header)
-        label = next((_norm(c) for c in cells[:first_month_col] if isinstance(c, str) and _norm(c)), None)
-        values = {
-            header[i]: cells[i]
-            for i in header
-            if i < len(cells) and isinstance(cells[i], (int, float)) and not isinstance(cells[i], bool)
-        }
-        if not label:
-            continue
-        low = label.lower().strip(" :")
-        if not values:
-            if low in SECTIONS:
-                section = SECTIONS[low]
-            elif (reg := _region_of(label)):
-                region, pending = reg, []
-            continue
-
-        reg = _region_of(label)
-        if _is_any(label, TOTAL_LABELS):
-            level, name, rgn = "world", "World", None
-        elif _is_any(label, INTL_LABELS):
-            level, name, rgn = "international", "International", None
-        elif reg:
-            level, name, rgn = "region", reg, reg
-            if region != reg:
-                for p in pending:
-                    p["region"] = reg
-            region, pending = None, []
-        elif low.startswith("total") or low in ("avg", "average"):
-            continue
-        else:
-            level, name, rgn = "country", label, region
-
-        for (m, y), v in values.items():
-            rec = dict(date=f"{y:04d}-{m:02d}", section=section, level=level,
-                       region=rgn or "", name=name, rigs=float(v), sheet=title)
-            records.append(rec)
-            if level == "country" and not region:
-                pending.append(rec)
-    return records
+        status[r["country"]][r["date"]].add(r["status"])
+    out = []
+    for country, months in status.items():
+        prev = None
+        for d in sorted(months):
+            cur = months[d]
+            if prev is not None and cur != prev:
+                out.append({"date": d, "country": country,
+                            "from": ", ".join(sorted(prev)), "to": ", ".join(sorted(cur))})
+            prev = cur
+    return sorted(out, key=lambda b: (b["date"], b["country"]))
 
 
-def tidy(records: list[dict]) -> list[dict]:
-    """Dedupliser (siste forekomst vinner) og sorter."""
-    best: dict[tuple, dict] = {}
-    for r in records:
-        best[(r["date"], r["section"], r["level"], r["region"], r["name"])] = r
-    rows = sorted(best.values(), key=lambda r: (r["section"], r["level"], r["region"], r["name"], r["date"]))
-    # US/Canada kan ligge både som land og region – behold dem som region.
-    return [r for r in rows if not (r["level"] == "country" and _region_of(r["name"]) in ("United States", "Canada"))]
+def chart_region(r: dict) -> str:
+    """USA og Canada vises som egne «regioner» i stedet for North America."""
+    return r["country"] if r["region"] == "North America" else r["region"]
 
 
 def to_site_json(rows: list[dict], meta: dict) -> dict:
-    sections: dict[str, dict] = {}
-    for r in rows:
-        s = sections.setdefault(r["section"], {"region": {}, "country": {}, "world": {}, "international": {}})
-        key = r["name"] if r["level"] != "country" else f'{r["region"]}|{r["name"]}'
-        s[r["level"]].setdefault(key, {})[r["date"]] = r["rigs"]
-
-    result = {"meta": meta, "sections": {}}
-    for name, s in sections.items():
-        dates = sorted({d for lvl in s.values() for series in lvl.values() for d in series})
-        def arr(series):
-            return [series.get(d) for d in dates]
-        regions = {k: arr(v) for k, v in s["region"].items()}
-        world = arr(s["world"]["World"]) if "World" in s["world"] else None
-        if world is None and regions:
-            world = [sum(v[i] for v in regions.values() if v[i] is not None) if any(v[i] is not None for v in regions.values()) else None for i in range(len(dates))]
-        countries = []
-        for k, v in s["country"].items():
-            rgn, cname = k.split("|", 1)
-            countries.append({"name": cname, "region": rgn, "values": arr(v)})
-        result["sections"][name] = {"dates": dates, "world": world, "regions": regions, "countries": countries}
-    return result
+    dates = sorted({r["date"] for r in rows})
+    idx = {d: i for i, d in enumerate(dates)}
+    sections = {}
+    for sec, keep in (
+        ("Total", lambda r: True),
+        ("Land", lambda r: r["location"] in ("Land", "Inland Waters")),  # som BHs egen oppsummering
+        ("Offshore", lambda r: r["location"] == "Offshore"),
+    ):
+        regions: dict[str, list] = defaultdict(lambda: [0.0] * len(dates))
+        countries: dict[tuple, list] = defaultdict(lambda: [0.0] * len(dates))
+        world = [0.0] * len(dates)
+        for r in rows:
+            if not keep(r):
+                continue
+            i = idx[r["date"]]
+            regions[chart_region(r)][i] += r["rigs"]
+            countries[(r["region"], r["country"])][i] += r["rigs"]
+            world[i] += r["rigs"]
+        rnd = lambda a: [round(v, 2) for v in a]  # noqa: E731
+        sections[sec] = {
+            "dates": dates,
+            "world": rnd(world),
+            "regions": {k: rnd(v) for k, v in regions.items()},
+            "countries": [{"name": c, "region": reg, "values": rnd(v)}
+                          for (reg, c), v in sorted(countries.items())],
+        }
+    return {"meta": meta, "sections": sections}
 
 
 def cmd_build() -> int:
@@ -286,36 +258,36 @@ def cmd_build() -> int:
     if not files:
         print("::error::Ingen filer i raw/. Kjør `fetch` eller `ingest FIL` først.")
         return 1
-    src = files[-1]
-    print(f"Parser {src.name}")
-    rows = tidy(parse_workbook(src))
-    if not rows:
-        print("::error::Fant ingen data i filen – layouten gjenkjennes ikke. Juster _parse_sheet().")
-        return 1
+    parsed = []
+    for f in files:
+        rows = parse_workbook(f)
+        print(f"  {f.name}: {len(rows)} rader, {rows[0]['date']} – {max(r['date'] for r in rows)}")
+        parsed.append(rows)
+    rows = merge(parsed)
 
     DATA.mkdir(exist_ok=True)
-    with (DATA / "worldwide_long.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["date", "section", "level", "region", "name", "rigs", "sheet"])
+    with (DATA / "worldwide_long.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(rows)
 
-    srcnote = src.with_name(src.name + ".source.txt")
+    latest = max(files, key=lambda f: max(r["date"] for r in parsed[files.index(f)]))
     meta = {
-        "file": src.name,
-        "source": srcnote.read_text().strip() if srcnote.exists() else "",
-        "built": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "first": min(r["date"] for r in rows),
-        "last": max(r["date"] for r in rows),
+        "files": [f.name for f in files],
+        "latest_file": latest.name,
+        "first": rows[0]["date"],
+        "last": rows[-1]["date"],
+        "breaks": find_breaks(rows),
     }
+    for b in meta["breaks"]:
+        print(f"::notice::Metodebrudd {b['date']}: {b['country']} går fra «{b['from']}» til «{b['to']}»")
     SITE_DATA.mkdir(parents=True, exist_ok=True)
     (SITE_DATA / "worldwide.json").write_text(json.dumps(to_site_json(rows, meta), separators=(",", ":")))
 
-    by = {}
-    for r in rows:
-        by.setdefault((r["section"], r["level"]), set()).add(r["name"])
-    print(f"{len(rows)} rader, {meta['first']} – {meta['last']}")
-    for (s, l), names in sorted(by.items()):
-        print(f"  {s:9} {l:13} {len(names):4} serier")
+    last = [r for r in rows if r["date"] == meta["last"]]
+    print(f"Totalt {len(rows)} rader, {meta['first']} – {meta['last']}, "
+          f"{len({r['country'] for r in rows})} land. Verden {meta['last']}: "
+          f"{sum(r['rigs'] for r in last):.1f}")
     return 0
 
 

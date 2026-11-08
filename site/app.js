@@ -3,10 +3,10 @@
 // Fast rekkefølge -> fast farge. Fargen følger regionen, aldri rangeringen.
 const REGION_ORDER = ["United States", "Canada", "Latin America", "Europe", "Africa", "Middle East", "Asia Pacific"];
 const MONTHS_NO = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
-const RANGES = [["5y", "5 år", 60], ["10y", "10 år", 120], ["all", "Alt", Infinity]];
+const RANGES = [["1y", "1 år", 12], ["2y", "2 år", 24], ["5y", "5 år", 60], ["10y", "10 år", 120], ["all", "Alt", Infinity]];
 const NA = ["United States", "Canada"];
 
-const state = { data: null, section: null, range: "10y", region: "" };
+const state = { data: null, section: null, range: "all", region: "" };
 const $ = (id) => document.getElementById(id);
 const fmt = (v) => (v == null ? "–" : Math.round(v).toLocaleString("nb-NO"));
 const label = (d) => { const [y, m] = d.split("-"); return `${MONTHS_NO[+m - 1]} ${y}`; };
@@ -73,7 +73,8 @@ function renderControls() {
   const names = { Total: "Totalt", Land: "Land", Offshore: "Offshore" };
   $("section-ctl").hidden = secs.length < 2;
   seg($("section-ctl"), secs.map((s) => [s, names[s] || s]), "section");
-  seg($("range-ctl"), RANGES.map(([k, t]) => [k, t]), "range");
+  const len = state.data.sections[state.section].dates.length;
+  seg($("range-ctl"), RANGES.filter((r) => r[2] < len || r[0] === "all").map(([k, t]) => [k, t]), "range");
 }
 
 function sec() { return state.data.sections[state.section]; }
@@ -108,7 +109,8 @@ function render() {
   renderTable();
   const m = state.data.meta || {};
   $("foot").textContent = `Data ${label(m.first || sec().dates[0])} – ${label(m.last || sec().dates.at(-1))}` +
-    (m.file ? ` · fil: ${m.file}` : "") + (m.built ? ` · oppdatert ${m.built.slice(0, 10)}` : "");
+    (m.latest_file ? ` · siste fil: ${m.latest_file}` : "") +
+    (m.breaks || []).map((b) => ` · Metodebrudd ${label(b.date)}: ${b.country} går fra «${b.from}» til «${b.to}» (BH har revidert bakover bare til denne måneden).`).join("") + (m.built ? ` · oppdatert ${m.built.slice(0, 10)}` : "");
 }
 
 function renderTiles() {
@@ -164,9 +166,12 @@ function renderChart() {
   const y = (v) => m.t + ih - (v / ymax) * ih;
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * ymax);
-  const yearIdx = dates.map((d, i) => [d, i]).filter(([d]) => d.endsWith("-01"));
-  const every = Math.ceil(yearIdx.length / Math.max(2, Math.floor(iw / 70)));
-  const xt = yearIdx.filter((_, k) => k % every === 0);
+  // Korte perioder: kvartalsetiketter («jan 2025»); lange: bare årstall.
+  const short = dates.length <= 36;
+  const cand = dates.map((d, i) => [d, i]).filter(([d]) => (short ? /-(01|04|07|10)$/ : /-01$/).test(d));
+  const every = Math.ceil(cand.length / Math.max(2, Math.floor(iw / (short ? 64 : 48))));
+  const xt = cand.filter((_, k) => k % every === 0);
+  const tickText = (d) => (short ? label(d) : d.slice(0, 4));
 
   const area = ([lo, hi]) => {
     const up = hi.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" L");
@@ -179,10 +184,13 @@ function renderChart() {
     <g class="grid">${ticks.map((t) => `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}"/>`).join("")}</g>
     <g class="axis">
       ${ticks.map((t) => `<text x="${m.l - 6}" y="${y(t) + 4}" text-anchor="end">${fmt(t)}</text>`).join("")}
-      ${xt.map(([d, i]) => `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${d.slice(0, 4)}</text>`).join("")}
+      ${xt.map(([d, i]) => `<text x="${x(i)}" y="${H - 6}" text-anchor="${x(i) > W - 40 ? "end" : x(i) < m.l + 20 ? "start" : "middle"}">${tickText(d)}</text>`).join("")}
     </g>
     ${stacks.map((st, k) => `<path d="${area(st)}" fill="${colorVar(regs[k])}" stroke="var(--surface-1)" stroke-width="2" stroke-linejoin="round"/>`).join("")}
     <line class="baseline" x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}"/>
+    ${(state.data.meta.breaks || []).map((b) => [b, dates.indexOf(b.date)]).filter(([, i]) => i > 0).map(([b, i]) => `
+      <g class="break"><line x1="${x(i)}" x2="${x(i)}" y1="${m.t}" y2="${m.t + ih}"/>
+      <text x="${x(i) > W - 160 ? x(i) - 5 : x(i) + 5}" y="${m.t + 12}" text-anchor="${x(i) > W - 160 ? "end" : "start"}">Metodebrudd: ${b.country}</text></g>`).join("")}
     <line class="crosshair" id="xh" y1="${m.t}" y2="${m.t + ih}" visibility="hidden"/>
     <rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/>
   </svg>`;
