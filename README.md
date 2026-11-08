@@ -8,7 +8,8 @@ raw/                 alle nedlastede xlsx-filer (= historikken)
 scripts/rigcount.py  fetch / ingest / build
 data/                worldwide_long.csv – én rad per måned/land/type/lokasjon
 site/                nettsiden: index.html (graf), map.html (kart + avspiller),
-                     upload.html (opplasting), data/worldwide.json
+                     us.html (USA/Canada), upload.html (opplasting),
+                     data/worldwide.json
 scripts/geo.py       koordinater per land for kartet
 tests/               parsertester
 ```

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>US Rig Count</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+  .card .hint { font-size: 12px; color: var(--text-muted); margin: 2px 0 0; }
+  .share { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+</style>
+</head>
+<body>
+<main class="viz-root">
+  <nav class="nav"><a href="./">Graf</a><a href="map.html">Kart</a><a href="us.html" aria-current="page">USA</a><a href="upload.html">Last opp</a></nav>
+  <header class="page-head">
+    <h1 id="title">US Rig Count</h1>
+    <p class="sub">Månedlig snitt av Baker Hughes' ukentlige tall, fordelt på type og lokasjon.</p>
+  </header>
+
+  <div id="empty" class="empty" hidden><p><strong>Ingen data ennå.</strong> <a href="upload.html">Last opp en månedsfil.</a></p></div>
+
+  <div id="app" hidden>
+    <div class="controls" role="toolbar" aria-label="Filtre">
+      <div class="seg" id="country-ctl" aria-label="Land"></div>
+      <div class="seg" id="range-ctl" aria-label="Tidsrom"></div>
+    </div>
+
+    <section class="tiles" id="tiles"></section>
+
+    <section class="card">
+      <h2>Rigger etter type</h2>
+      <p class="hint">Hva riggene borer etter. «Annet» er bl.a. geotermisk og lagring.</p>
+      <ul class="legend" id="legend-drill"></ul>
+      <div class="chart-wrap" id="chart-drill"></div>
+      <div class="tooltip" hidden></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <h2>Andel oljerigger</h2>
+        <p class="hint">Olje som andel av alle rigger.</p>
+        <div class="chart-wrap" id="chart-share"></div>
+        <div class="tooltip" hidden></div>
+      </section>
+      <section class="card">
+        <h2 id="off-title">Offshore og innlandsvann</h2>
+        <p class="hint">Egen skala – disse er små sammenlignet med land.</p>
+        <ul class="legend" id="legend-off"></ul>
+        <div class="chart-wrap" id="chart-off"></div>
+        <div class="tooltip" hidden></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Siste 24 måneder</h2>
+      <div class="table-wrap">
+        <table id="table"><thead></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+</main>
+<script src="us.js"></script>
+</body>
+</html>

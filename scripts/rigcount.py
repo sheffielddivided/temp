@@ -256,7 +256,25 @@ def to_site_json(rows: list[dict], meta: dict) -> dict:
     for n in missing:
         print(f"::warning::Mangler koordinater for «{n}» i scripts/geo.py – vises ikke på kartet.")
     geo = {n: [COORDS[n][1], COORDS[n][0]] for n in names if n in COORDS}  # [lon, lat]
-    return {"meta": meta, "sections": sections, "geo": geo}
+    # Detaljer for USA og Canada (brukes av us.html): fordeling på type og lokasjon.
+    detail = {}
+    for country in ("United States", "Canada"):
+        cr = [r for r in rows if r["country"] == country]
+        if not cr:
+            continue
+        drill: dict[str, list] = defaultdict(lambda: [0.0] * len(dates))
+        loc: dict[str, list] = defaultdict(lambda: [0.0] * len(dates))
+        total = [0.0] * len(dates)
+        for r in cr:
+            i = idx[r["date"]]
+            drill[r["drill_for"] or "Ukjent"][i] += r["rigs"]
+            loc[r["location"] or "Ukjent"][i] += r["rigs"]
+            total[i] += r["rigs"]
+        rnd = lambda a: [round(v, 2) for v in a]  # noqa: E731
+        detail[country] = {"drill_for": {k: rnd(v) for k, v in drill.items()},
+                           "location": {k: rnd(v) for k, v in loc.items()},
+                           "total": rnd(total)}
+    return {"meta": meta, "sections": sections, "geo": geo, "detail": detail, "dates": dates}
 
 
 def cmd_build() -> int:
