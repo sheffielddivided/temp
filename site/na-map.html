@@ -12,6 +12,13 @@
   .map-wrap svg:active { cursor: grabbing; }
   .land { fill: var(--land); stroke: var(--land-border); stroke-linejoin: round; }
   .land.has { fill: var(--land-hl); }
+  .cty { fill: var(--land); stroke: none; }
+  .cty-mesh { fill: none; stroke: var(--county-line); stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+  .state-mesh { fill: none; stroke: var(--land-border); stroke-width: 1.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .nation { fill: none; stroke: var(--text-muted); stroke-width: 0.8; vector-effect: non-scaling-stroke; }
+  :root { --county-line: rgb(0 0 0 / 0.10); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --county-line: rgb(255 255 255 / 0.10); } }
+  :root[data-theme="dark"] { --county-line: rgb(255 255 255 / 0.10); }
   .bubble { stroke: var(--surface-1); fill-opacity: 0.82; cursor: pointer; }
   .bubble:hover, .bubble.active { fill-opacity: 1; stroke: var(--text-primary); }
   .lbl { fill: var(--text-primary); font-weight: 600; text-anchor: middle; pointer-events: none;
@@ -134,7 +141,8 @@ const CFG = {
     note: "Baker Hughes oppgir Canada i egne regioner (f.eks. «Foothills Front»), ikke counties. Boblene står på omtrentlige midtpunkter for regionene.",
   },
 };
-const US_STATES = "https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-10m.json";
+// counties-10m inneholder både counties, delstater og landegrensen (US Census, 1:10m).
+const US_ATLAS = "https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/counties-10m.json";
 
 const $ = (id) => document.getElementById(id);
 const fmt = (v) => (v == null ? "–" : Math.round(v).toLocaleString("nb-NO"));
@@ -146,7 +154,7 @@ const geo = {};
 
 Promise.all([
   fetch("data/na_map.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-  fetch(US_STATES).then((r) => r.json()).catch(() => null),
+  fetch(US_ATLAS).then((r) => r.json()).catch(() => null),
   fetch("geo/canada-provinces.json").then((r) => r.json()).catch(() => null),
 ]).then(([data, us, ca]) => {
   if (!data || !data.countries) { $("empty").hidden = false; return; }
@@ -162,6 +170,13 @@ Promise.all([
   state.data = data;
   state.i = n - 1;
   geo["United States"] = us ? topojson.feature(us, us.objects.states).features : [];
+  if (us) {
+    geo.usCounties = topojson.feature(us, us.objects.counties).features;
+    // Countygrenser innenfor samme delstat (delstatsgrensene tegnes for seg, kraftigere).
+    geo.usCountyMesh = topojson.mesh(us, us.objects.counties, (a, b) => a !== b && a.id.slice(0, 2) === b.id.slice(0, 2));
+    geo.usStateMesh = topojson.mesh(us, us.objects.states, (a, b) => a !== b);
+    geo.usNation = topojson.mesh(us, us.objects.nation);
+  }
   geo.Canada = ca ? ca.features : [];
   const want = new URLSearchParams(location.search).get("land");
   if (want === "ca" && data.countries.Canada) state.country = "Canada";
@@ -265,10 +280,22 @@ function build() {
   svg.selectAll("*").remove();
   gRoot = svg.append("g");
   gLand = gRoot.append("g");
-  const withRigs = new Set(places().map((p) => p.s.toLowerCase()));
-  gLand.selectAll("path").data(feats).join("path")
-    .attr("class", (f) => "land" + (withRigs.has(String(f.properties.name).toLowerCase().replace("québec", "quebec")) ? " has" : ""))
-    .attr("d", path);
+  state.ctyEls = null;
+  if (isUS && geo.usCounties) {
+    // County-flater (fargelegges svakt når countyet har rigger), så county-, delstats- og landegrenser.
+    const els = new Map();
+    gLand.selectAll("path.cty").data(geo.usCounties).join("path").attr("class", "cty").attr("d", path)
+      .each(function (f) { els.set(f.id, this); });
+    gLand.append("path").attr("class", "cty-mesh").attr("d", path(geo.usCountyMesh));
+    gLand.append("path").attr("class", "state-mesh").attr("d", path(geo.usStateMesh));
+    gLand.append("path").attr("class", "nation").attr("d", path(geo.usNation));
+    state.ctyEls = els; state.ctyOn = new Map();
+  } else {
+    const withRigs = new Set(places().map((p) => p.s.toLowerCase()));
+    gLand.selectAll("path").data(feats).join("path")
+      .attr("class", (f) => "land" + (withRigs.has(String(f.properties.name).toLowerCase().replace("québec", "quebec")) ? " has" : ""))
+      .attr("d", path);
+  }
   gB = gRoot.append("g");
   gL = gRoot.append("g");
 
@@ -300,7 +327,7 @@ const rAt = (v, k) => r(v || 0) / Math.pow(k, 0.7);
 function applyZoom() {
   const k = state.t.k;
   gRoot.attr("transform", state.t);
-  gLand.selectAll("path").attr("stroke-width", 0.6 / k);
+  gLand.selectAll("path.land").attr("stroke-width", 0.6 / k);
   gB.selectAll("circle").attr("r", (d) => rAt(d.v, k)).attr("stroke-width", 0.8 / k);
   labels();
   tipFollow();
@@ -324,6 +351,7 @@ function render(animate) {
     .attr("r", (d) => rAt(d.v, k));
   all.classed("active", (d) => d.id === state.active);
   state.pts = pts;
+  tintCounties(pts);
   labels();
 
   const total = pts.reduce((a, d) => a + d.v, 0);
@@ -343,6 +371,20 @@ function render(animate) {
       <span class="name"><b>${s}</b><span class="bar" style="width:${(v / m2) * 100}%;background:var(--accent)"></span></span><span class="v">${fmt(v)}</span></li>`).join("");
 
   if (state.active) { if (pts.some((d) => d.id === state.active)) fillTip(state.active); else hideTip(); }
+}
+
+// Svak bassengfarge på counties med rigger i valgt uke. Oppdaterer bare de som endrer seg.
+function tintCounties(pts) {
+  if (!state.ctyEls) return;
+  const next = new Map();
+  for (const d of pts) if (d.p.f) next.set(d.p.f, colorVar(d.p));
+  for (const [f, el] of state.ctyOn) if (!next.has(f)) { el.style.fill = ""; el.style.fillOpacity = ""; state.ctyOn.delete(f); }
+  for (const [f, c] of next) {
+    const el = state.ctyEls.get(f);
+    if (!el) continue;
+    if (state.ctyOn.get(f) !== el) { el.style.fill = c; el.style.fillOpacity = "0.28"; state.ctyOn.set(f, el); }
+    else if (el.style.fill !== c) el.style.fill = c;
+  }
 }
 
 function labels() {

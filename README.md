@@ -126,7 +126,8 @@ Manuelt (lokalt): legg filen i `inbox/` og kjør `python scripts/rigcount.py bui
 
 ## Detaljkart (NA-kart)
 
-`na-map.html` viser rigger per county (USA) og per BH-region (Canada) uke for
+`na-map.html` viser rigger per county (USA, med county- og delstatsgrenser og
+svak fargelegging av counties med rigger) og per BH-region (Canada) uke for
 uke fra 2011, med avspiller og zoom. Boblene står på county-tyngdepunkt fra
 us-atlas@3.0.1 (`scripts/us_county_centroids.csv`). Offshore-blokker i
 Mexicogolfen (f.eks. Green Canyon), kartblader i Alaska og Canadas regioner har

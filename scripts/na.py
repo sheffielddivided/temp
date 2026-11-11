@@ -338,7 +338,11 @@ def build_map(county_history: Path, sources_path: Path, site_data: Path) -> list
         b = basins[key]
         main_basin = max(b, key=b.get)
         c = out["countries"].setdefault(country, [])
-        c.append({"n": loc.get("name", county) if loc.get("fips") else county, "s": state, "b": main_basin, "x": round(loc["lon"], 3), "y": round(loc["lat"], 3), "v": pairs})
+        place = {"n": loc.get("name", county) if loc.get("fips") else county, "s": state, "b": main_basin,
+                 "x": round(loc["lon"], 3), "y": round(loc["lat"], 3), "v": pairs}
+        if loc.get("fips"):
+            place["f"] = loc["fips"]  # kobler stedet til county-polygonet på kartet
+        c.append(place)
     sources = json.loads(sources_path.read_text()) if sources_path.exists() else {}
     out["meta"] = {"first": dates[0], "last": dates[-1], "latest_file": sources[max(sources)]["file"] if sources else ""}
     site_data.mkdir(parents=True, exist_ok=True)
