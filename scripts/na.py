@@ -57,6 +57,11 @@ def _title(s) -> str:
                    for i, w in enumerate(words))
 
 
+def _county(v) -> str:
+    s = str(v or "").strip()
+    return "Ukjent" if s.lower() in ("", "none", "null") else _title(s)
+
+
 def _date(v) -> str:
     if isinstance(v, (dt.datetime, dt.date)):
         return v.strftime("%Y-%m-%d")
@@ -102,7 +107,7 @@ def parse_xlsb(path: Path) -> list[dict]:
                 location = LOCATIONS.get(_key(g("location")), str(g("location") or "").strip())
                 rigs = g("rigs")
                 out.append({
-                    "date": date, "country": country, "state": state,
+                    "date": date, "country": country, "state": state, "county": _county(g("county")),
                     "basin": str(g("basin") or "").strip() or "Other",
                     "gom": "Yes" if is_gulf(country, location, state) else "No",
                     "drill_for": str(g("drill_for") or "").strip(),
@@ -141,6 +146,7 @@ def parse_workbook(path: Path) -> list[dict]:
                 "date": _date(g("date")),
                 "country": _title(g("country")),
                 "state": _title(g("state")),
+                "county": _county(g("county")),
                 "basin": str(g("basin") or "").strip() or "Other",
                 "gom": "Yes" if _key(g("gom")) == "yes" else "No",
                 "drill_for": str(g("drill_for") or "").strip(),
@@ -210,38 +216,47 @@ def _num(v: float):
     return int(v) if float(v).is_integer() else round(v, 3)
 
 
-def load_history(history: Path) -> dict[str, dict[tuple, float]]:
+# County-historikken er egen (og grovere på de andre dimensjonene) for å holde
+# filene små: én rad per uke × land × delstat/provins × county × basseng.
+COUNTY_FIELDS = ["date", "country", "state", "county", "basin", "rigs"]
+
+
+def load_history(history: Path, fields: list[str] = FIELDS) -> dict[str, dict[tuple, float]]:
     weeks: dict[str, dict[tuple, float]] = defaultdict(dict)
     if history.exists():
         with history.open(newline="") as fh:
             for r in csv.DictReader(fh):
-                weeks[r["date"]][tuple(r[k] for k in KEYS[1:])] = float(r["rigs"])
+                weeks[r["date"]][tuple(r[k] for k in fields[1:-1])] = float(r["rigs"])
     return weeks
 
 
-def save_history(history: Path, weeks: dict[str, dict[tuple, float]]) -> None:
+def save_history(history: Path, weeks: dict[str, dict[tuple, float]], fields: list[str] = FIELDS) -> None:
     history.parent.mkdir(exist_ok=True)
     tmp = history.with_suffix(".tmp")
     with tmp.open("w", newline="") as fh:
         w = csv.writer(fh, lineterminator="\n")
-        w.writerow(FIELDS)
+        w.writerow(fields)
         for d in sorted(weeks):
             for k in sorted(weeks[d]):
                 w.writerow([d, *k, _num(weeks[d][k])])
     tmp.replace(history)
 
 
-def ingest(files: list[Path], history: Path, sources_path: Path) -> list[str]:
+def ingest(files: list[Path], history: Path, sources_path: Path, county_history: Path | None = None) -> list[str]:
     """Flett rapporter inn i historikken. Returnerer en linje per fil til loggen."""
     weeks = load_history(history)
+    cweeks = load_history(county_history, COUNTY_FIELDS) if county_history else None
     sources = json.loads(sources_path.read_text()) if sources_path.exists() else {}
     log = []
     parsed = [(f, parse_file(f)) for f in files]
     for f, rows in sorted(parsed, key=lambda fp: max(r["date"] for r in fp[1])):
         last = max(r["date"] for r in rows)
         agg: dict[str, dict[tuple, float]] = defaultdict(lambda: defaultdict(float))
+        cagg: dict[str, dict[tuple, float]] = defaultdict(lambda: defaultdict(float))
         for r in rows:
             agg[r["date"]][tuple(r[k] for k in KEYS[1:])] += r["rigs"]
+            if cweeks is not None:
+                cagg[r["date"]][tuple(r.get(k, "Ukjent") for k in COUNTY_FIELDS[1:-1])] += r["rigs"]
         new = upd = skip = 0
         for d, data in agg.items():
             prev = sources.get(d)
@@ -253,10 +268,14 @@ def ingest(files: list[Path], history: Path, sources_path: Path) -> list[str]:
             elif weeks[d] != dict(data):
                 upd += 1
             weeks[d] = dict(data)
+            if cweeks is not None:
+                cweeks[d] = {k: v for k, v in cagg[d].items() if v}
             sources[d] = {"report_last": last, "file": f.name}
         log.append(f"{f.name}: {len(agg)} uker ({min(agg)} – {last}); {new} nye, {upd} reviderte, "
                    f"{skip} hoppet over (nyere rapport finnes)")
     save_history(history, weeks)
+    if cweeks is not None:
+        save_history(county_history, cweeks, COUNTY_FIELDS)
     # Én linje per uke, så diffene i git blir små og lesbare.
     lines = [f"  {json.dumps(d)}: {json.dumps(sources[d], ensure_ascii=False)}" for d in sorted(sources)]
     sources_path.write_text("{\n" + ",\n".join(lines) + "\n}\n")
@@ -280,3 +299,52 @@ def build(history: Path, sources_path: Path, site_data: Path) -> None:
     ca = sum(r["rigs"] for r in last if r["country"] == "Canada")
     print(f"North America: {len(rows)} rader, {meta['first']} – {meta['last']} "
           f"({len(weeks)} uker). Siste uke: USA {us:g}, Canada {ca:g}")
+
+
+# ------------------------------------------------------------------ detaljkart
+def build_map(county_history: Path, sources_path: Path, site_data: Path) -> list[str]:
+    """site/data/na_map.json: rigger per county (USA) / BH-region (Canada) per uke.
+
+    Hver plass har en «v»-liste med (indeksdelta, rigger)-par for uker med rigger,
+    så filen holder seg liten selv med 800+ uker. Returnerer ukjente steder.
+    """
+    import na_geo
+
+    weeks = load_history(county_history, COUNTY_FIELDS)
+    if not weeks:
+        print("Ingen county-historikk – hopper over detaljkart.")
+        return []
+    dates = sorted(weeks)
+    idx = {d: i for i, d in enumerate(dates)}
+    series: dict[tuple, dict[int, float]] = defaultdict(dict)
+    basins: dict[tuple, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for d, data in weeks.items():
+        for (country, state, county, basin), v in data.items():
+            key = (country, state, county)
+            series[key][idx[d]] = series[key].get(idx[d], 0) + v
+            basins[key][basin] += v
+    out = {"dates": dates, "countries": {}}
+    missing = []
+    for key in sorted(series):
+        country, state, county = key
+        loc = na_geo.locate(country, state, county)
+        if not loc:
+            missing.append(f"{country} / {state} / {county}")
+            continue
+        pairs, prev = [], -1
+        for i in sorted(series[key]):
+            pairs += [i - prev, _num(series[key][i])]
+            prev = i
+        b = basins[key]
+        main_basin = max(b, key=b.get)
+        c = out["countries"].setdefault(country, [])
+        c.append({"n": loc.get("name", county) if loc.get("fips") else county, "s": state, "b": main_basin, "x": round(loc["lon"], 3), "y": round(loc["lat"], 3), "v": pairs})
+    sources = json.loads(sources_path.read_text()) if sources_path.exists() else {}
+    out["meta"] = {"first": dates[0], "last": dates[-1], "latest_file": sources[max(sources)]["file"] if sources else ""}
+    site_data.mkdir(parents=True, exist_ok=True)
+    (site_data / "na_map.json").write_text(json.dumps(out, separators=(",", ":")))
+    for m in missing:
+        print(f"::warning::Mangler koordinater for {m} i scripts/na_geo.py – vises ikke på detaljkartet.")
+    n = {c: len(v) for c, v in out["countries"].items()}
+    print(f"Detaljkart: {n} steder, {len(dates)} uker.")
+    return missing

@@ -3,55 +3,97 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Worldwide Rig Count</title>
+<title>North America Rig Count</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+  .card .hint { font-size: 12px; color: var(--text-muted); margin: 2px 0 0; }
+  .share { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+  .section-title { font-size: 18px; margin: 28px 0 12px; }
+  .section-title span { font-size: 14px; font-weight: 400; color: var(--text-secondary); }
+  #weekly > .section-title:first-child { margin-top: 4px; }
+  td.bar-cell { width: 30%; min-width: 80px; }
+  td.bar-cell span { display: block; height: 6px; border-radius: 3px; background: var(--accent); opacity: .8; }
+</style>
 </head>
 <body>
 <main class="viz-root">
-  <nav class="nav"><a href="./" aria-current="page">Graf</a><a href="map.html">Kart</a><a href="us.html">USA</a><a href="upload.html">Last opp</a></nav>
+  <nav class="nav"><a href="./" aria-current="page">North America</a><a href="na-map.html">NA-kart</a><a href="international.html">International</a><a href="map.html">Verdenskart</a><a href="upload.html">Last opp</a></nav>
   <header class="page-head">
-    <h1>Worldwide Rig Count</h1>
-    <p class="sub">Aktive borerigger per region, månedlig. Kilde: Baker Hughes.</p>
+    <h1 id="title">US Rig Count</h1>
+    <p class="sub">Ukentlige tall per basseng og delstat fra 2011, og månedssnitt fra Worldwide-filen. Kilde: Baker Hughes.</p>
   </header>
 
-  <div id="empty" class="empty" hidden>
-    <p><strong>Ingen data ennå.</strong> Legg en Worldwide Rig Count-fil i <code>raw/</code>
-      (<a href="upload.html">last opp her</a>) – så bygges siden automatisk.</p>
-  </div>
+  <div id="empty" class="empty" hidden><p><strong>Ingen data ennå.</strong> <a href="upload.html">Last opp en månedsfil.</a></p></div>
 
   <div id="app" hidden>
-    <section class="tiles" id="tiles"></section>
-
     <div class="controls" role="toolbar" aria-label="Filtre">
-      <div class="seg" id="section-ctl" aria-label="Seksjon"></div>
+      <div class="seg" id="country-ctl" aria-label="Land"></div>
       <div class="seg" id="range-ctl" aria-label="Tidsrom"></div>
     </div>
 
-    <section class="card">
-      <h2>Rigger per region</h2>
-      <ul class="legend" id="legend"></ul>
-      <div class="chart-wrap" id="chart"></div>
-      <div class="tooltip" id="tip" hidden></div>
-    </section>
+    <div id="weekly" hidden>
+      <h2 class="section-title">Ukentlig <span id="wk-sub"></span></h2>
+      <section class="tiles" id="wk-tiles"></section>
+
+      <section class="card">
+        <h2 id="wk-chart-title">Rigger per basseng</h2>
+        <p class="hint" id="wk-chart-hint"></p>
+        <ul class="legend" id="legend-wk"></ul>
+        <div class="chart-wrap" id="chart-wk"></div>
+        <div class="tooltip" hidden></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 id="wk-table-title">Siste uke</h2>
+          <div class="seg" id="wk-dim-ctl" aria-label="Fordeling"></div>
+        </div>
+        <div class="table-wrap">
+          <table id="wk-table"><thead></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <h2 class="section-title">Månedlig <span>· fra Worldwide-filen (månedssnitt)</span></h2>
+    </div>
+
+    <section class="tiles" id="tiles"></section>
 
     <section class="card">
-      <div class="card-head">
-        <h2 id="table-title">Siste måned per land</h2>
-        <label class="sel">Region
-          <select id="region-sel"></select>
-        </label>
-      </div>
+      <h2>Rigger etter type</h2>
+      <p class="hint">Hva riggene borer etter. «Annet» er bl.a. geotermisk og lagring.</p>
+      <ul class="legend" id="legend-drill"></ul>
+      <div class="chart-wrap" id="chart-drill"></div>
+      <div class="tooltip" hidden></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <h2>Andel oljerigger</h2>
+        <p class="hint">Olje som andel av alle rigger.</p>
+        <div class="chart-wrap" id="chart-share"></div>
+        <div class="tooltip" hidden></div>
+      </section>
+      <section class="card">
+        <h2 id="off-title">Offshore og innlandsvann</h2>
+        <p class="hint">Egen skala – disse er små sammenlignet med land.</p>
+        <ul class="legend" id="legend-off"></ul>
+        <div class="chart-wrap" id="chart-off"></div>
+        <div class="tooltip" hidden></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Siste 24 måneder</h2>
       <div class="table-wrap">
-        <table id="table">
-          <thead><tr><th>Land</th><th>Region</th><th class="num">Rigger</th><th class="num">Endring m/m</th><th class="num">Endring å/å</th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <table id="table"><thead></thead><tbody></tbody></table>
       </div>
     </section>
 
     <footer class="foot" id="foot"></footer>
   </div>
 </main>
-<script src="app.js"></script>
+<script src="us.js"></script>
 </body>
 </html>

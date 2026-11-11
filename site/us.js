@@ -47,7 +47,7 @@ function renderControls() {
 function render() {
   const name = COUNTRIES[state.country] || state.country;
   $("title").textContent = `${name} Rig Count`;
-  document.title = `${name} Rig Count`;
+  document.title = `North America Rig Count · ${name}`;
   renderWeekly();
   renderTiles();
   renderCharts();

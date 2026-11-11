@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North America Rig Map</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .map-card { padding: 0; overflow: hidden; }
+  .map-wrap { position: relative; background: var(--sea); touch-action: none; }
+  .map-wrap svg { display: block; width: 100%; height: auto; cursor: grab; }
+  .map-wrap svg:active { cursor: grabbing; }
+  .land { fill: var(--land); stroke: var(--land-border); stroke-linejoin: round; }
+  .land.has { fill: var(--land-hl); }
+  .bubble { stroke: var(--surface-1); fill-opacity: 0.82; cursor: pointer; }
+  .bubble:hover, .bubble.active { fill-opacity: 1; stroke: var(--text-primary); }
+  .lbl { fill: var(--text-primary); font-weight: 600; text-anchor: middle; pointer-events: none;
+         paint-order: stroke; stroke: var(--surface-1); stroke-linejoin: round; }
+  .zoom-ctl { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .zoom-ctl button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-primary); font: 600 16px/1 system-ui, sans-serif; cursor: pointer; }
+  .badge { position: absolute; left: 12px; bottom: 10px; pointer-events: none; font-size: 28px; font-weight: 700;
+    color: var(--text-primary); text-shadow: 0 0 6px var(--sea), 0 0 2px var(--sea); }
+  .badge small { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+  .player { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; flex: none; }
+  .play svg { width: 16px; height: 16px; fill: currentColor; }
+  .step { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); cursor: pointer; flex: none; }
+  .slider { flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+  .slider input { width: 100%; accent-color: var(--accent); }
+  .slider .ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .speed { font-size: 13px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
+  .speed select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
+  .below { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  @media (max-width: 900px) { .below { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 760px) { .badge { font-size: 18px; left: 8px; bottom: 6px; } .badge small { font-size: 11px; } }
+  .size-legend { display: flex; align-items: flex-end; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+  .size-legend span { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+  .size-legend i { display: block; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+  .top-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14px; }
+  .top-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) 48px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .top-list li[data-k] { cursor: pointer; }
+  .top-list li[data-k]:hover { background: var(--page); }
+  .top-list .rank { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .top-list .name { display: flex; flex-direction: column; min-width: 0; }
+  .top-list .name b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-list .name small { color: var(--text-muted); font-size: 12px; }
+  .top-list .bar { height: 4px; border-radius: 2px; margin-top: 3px; }
+  .top-list .v { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .note { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+  #tip { min-width: 170px; }
+</style>
+</head>
+<body>
+<main class="viz-root">
+  <nav class="nav"><a href="./">North America</a><a href="na-map.html" aria-current="page">NA-kart</a><a href="international.html">International</a><a href="map.html">Verdenskart</a><a href="upload.html">Last opp</a></nav>
+  <header class="page-head">
+    <h1 id="title">Rigger per county</h1>
+    <p class="sub" id="sub">Ukentlige tall fra Baker Hughes. Boblens areal = antall rigger, fargen = basseng. Dra for å panorere, scroll eller knip for å zoome.</p>
+  </header>
+
+  <div id="empty" class="empty" hidden><p><strong>Ingen data ennå.</strong> <a href="upload.html">Last opp en North America-ukerapport.</a></p></div>
+
+  <div id="app" hidden>
+    <div class="controls" role="toolbar" aria-label="Filtre">
+      <div class="seg" id="country-ctl" aria-label="Land"></div>
+    </div>
+
+    <section class="card map-card">
+      <div class="map-wrap" id="wrap">
+        <svg id="map" role="img" aria-label="Kart med rigger per county"></svg>
+        <div class="zoom-ctl">
+          <button type="button" id="zin" aria-label="Zoom inn">+</button>
+          <button type="button" id="zout" aria-label="Zoom ut">−</button>
+          <button type="button" id="zreset" aria-label="Vis hele kartet" style="font-size:13px">⤢</button>
+        </div>
+        <div class="badge" id="badge"></div>
+        <div class="tooltip" id="tip" hidden></div>
+      </div>
+      <div class="player">
+        <button class="play" id="play" type="button" aria-label="Spill av"></button>
+        <button class="step" id="prev" type="button" aria-label="Forrige uke">‹</button>
+        <button class="step" id="next" type="button" aria-label="Neste uke">›</button>
+        <div class="slider">
+          <input type="range" id="slider" min="0" max="0" step="1" aria-label="Uke">
+          <div class="ends"><span id="start-lbl"></span><span id="end-lbl"></span></div>
+        </div>
+        <label class="speed">Fart
+          <select id="speed">
+            <option value="300">Sakte</option>
+            <option value="110" selected>Normal</option>
+            <option value="40">Rask</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <div class="below">
+      <section class="card">
+        <h2 id="legend-title">Basseng</h2>
+        <ul class="legend" id="legend"></ul>
+        <div class="size-legend" id="size-legend"></div>
+        <p class="note" id="note"></p>
+      </section>
+      <section class="card">
+        <h2 id="top-title">Topp 10</h2>
+        <ol class="top-list" id="top"></ol>
+      </section>
+      <section class="card">
+        <h2 id="state-title">Delstater</h2>
+        <ol class="top-list" id="states"></ol>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+"use strict";
+const MONTHS = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
+// Samme farger som grafene på North America-siden: fargen følger basseng/provins, aldri rangering.
+const CFG = {
+  "United States": {
+    label: "USA", group: "Basseng", unit: "county", units: "counties", region: "Delstater",
+    order: ["Permian", "Haynesville", "Eagle Ford", "Marcellus", "Williston", "Cana Woodford", "Utica"],
+    colorOf: (p) => p.b,
+    note: "Offshore-boblene i Mexicogolfen og noen i Alaska er BOEM-blokker/kartblader, ikke counties – de står på omtrentlige midtpunkter.",
+  },
+  Canada: {
+    label: "Canada", group: "Provins", unit: "region", units: "regioner", region: "Provinser",
+    order: ["Alberta", "Saskatchewan", "British Columbia", "Manitoba", "NL Offshore"],
+    colorOf: (p) => p.s,
+    note: "Baker Hughes oppgir Canada i egne regioner (f.eks. «Foothills Front»), ikke counties. Boblene står på omtrentlige midtpunkter for regionene.",
+  },
+};
+const US_STATES = "https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-10m.json";
+
+const $ = (id) => document.getElementById(id);
+const fmt = (v) => (v == null ? "–" : Math.round(v).toLocaleString("nb-NO"));
+const labelW = (d) => { const [y, m, dd] = d.split("-"); return `${+dd}. ${MONTHS[+m - 1]} ${y}`; };
+const signed = (d) => (d == null ? "–" : (d > 0 ? "+" : d < 0 ? "−" : "±") + fmt(Math.abs(d)));
+
+const state = { data: null, country: "United States", i: 0, playing: false, timer: null, t: d3.zoomIdentity, active: null };
+const geo = {};
+
+Promise.all([
+  fetch("data/na_map.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  fetch(US_STATES).then((r) => r.json()).catch(() => null),
+  fetch("geo/canada-provinces.json").then((r) => r.json()).catch(() => null),
+]).then(([data, us, ca]) => {
+  if (!data || !data.countries) { $("empty").hidden = false; return; }
+  // Pakk ut (indeksdelta, verdi)-parene til tette serier.
+  const n = data.dates.length;
+  for (const places of Object.values(data.countries)) {
+    for (const p of places) {
+      const a = new Float32Array(n);
+      for (let k = 0, i = -1; k < p.v.length; k += 2) { i += p.v[k]; a[i] = p.v[k + 1]; }
+      p.a = a; p.id = `${p.s}|${p.n}`;
+    }
+  }
+  state.data = data;
+  state.i = n - 1;
+  geo["United States"] = us ? topojson.feature(us, us.objects.states).features : [];
+  geo.Canada = ca ? ca.features : [];
+  const want = new URLSearchParams(location.search).get("land");
+  if (want === "ca" && data.countries.Canada) state.country = "Canada";
+  if (!data.countries[state.country]) state.country = Object.keys(data.countries)[0];
+  $("app").hidden = false;
+  setup();
+  build();
+  render(false);
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { build(); render(false); }, 150); });
+});
+
+function places() { return state.data.countries[state.country]; }
+function cfg() { return CFG[state.country]; }
+function colorVar(p) {
+  const k = cfg().colorOf(p), i = cfg().order.indexOf(k);
+  return i >= 0 ? `var(--s${i + 1})` : "var(--other)";
+}
+
+// ------------------------------------------------------------ kontroller
+function setup() {
+  const seg = $("country-ctl");
+  const draw = () => {
+    seg.innerHTML = "";
+    for (const c of Object.keys(state.data.countries).sort((a, b) => (a === "United States" ? -1 : b === "United States" ? 1 : 0))) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = CFG[c] ? CFG[c].label : c;
+      b.setAttribute("aria-pressed", String(c === state.country));
+      b.onclick = () => {
+        state.country = c; state.t = d3.zoomIdentity; hideTip(); draw(); build(); render(false);
+        history.replaceState(null, "", c === "Canada" ? "?land=ca" : location.pathname);
+      };
+      seg.appendChild(b);
+    }
+  };
+  draw();
+  const dates = state.data.dates, slider = $("slider");
+  slider.max = dates.length - 1; slider.value = state.i;
+  $("start-lbl").textContent = labelW(dates[0]);
+  $("end-lbl").textContent = labelW(dates.at(-1));
+  slider.addEventListener("input", () => { stop(); state.i = +slider.value; render(false); });
+  $("play").onclick = () => (state.playing ? stop() : play());
+  $("prev").onclick = () => { stop(); step(-1); };
+  $("next").onclick = () => { stop(); step(1); };
+  $("speed").onchange = () => { if (state.playing) { stop(); play(); } };
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, select, textarea")) return;
+    if (e.key === " ") { e.preventDefault(); state.playing ? stop() : play(); }
+    if (e.key === "ArrowLeft") { stop(); step(e.shiftKey ? -52 : -1); }
+    if (e.key === "ArrowRight") { stop(); step(e.shiftKey ? 52 : 1); }
+  });
+  setPlayIcon();
+}
+
+function setPlayIcon() {
+  $("play").innerHTML = state.playing
+    ? '<svg viewBox="0 0 16 16"><rect x="3" y="2" width="4" height="12" rx="1"/><rect x="9" y="2" width="4" height="12" rx="1"/></svg>'
+    : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>';
+  $("play").setAttribute("aria-label", state.playing ? "Pause" : "Spill av");
+}
+function play() {
+  const n = state.data.dates.length;
+  if (state.i >= n - 1) { state.i = 0; render(false); }
+  state.playing = true; setPlayIcon();
+  const tick = () => {
+    if (state.i >= n - 1) { stop(); return; }
+    state.i++; render(true);
+    state.timer = setTimeout(tick, +$("speed").value);
+  };
+  state.timer = setTimeout(tick, +$("speed").value);
+}
+function stop() { state.playing = false; clearTimeout(state.timer); setPlayIcon(); }
+function step(d) { state.i = Math.max(0, Math.min(state.data.dates.length - 1, state.i + d)); render(false); }
+
+// ------------------------------------------------------------ kart
+let svg, gRoot, gLand, gB, gL, proj, zoom, W, H, r;
+
+function build() {
+  const wrap = $("wrap");
+  W = wrap.clientWidth;
+  const isUS = state.country === "United States";
+  H = Math.round(W < 600 ? W * 0.85 : Math.min(W * (isUS ? 0.6 : 0.62), window.innerHeight * 0.72));
+  const feats = geo[state.country] || [];
+  if (isUS) {
+    proj = d3.geoAlbersUsa().fitExtent([[8, 8], [W - 8, H - 8]], { type: "FeatureCollection", features: feats });
+  } else {
+    // Kanadas sørlige del + NL offshore; territoriene i nord tegnes, men styrer ikke utsnittet.
+    const south = feats.filter((f) => !/Nunavut|Northwest|Yukon/.test(f.properties.name));
+    const pts = places().map((p) => [p.x, p.y]);
+    proj = d3.geoConicConformal().parallels([49, 62]).rotate([96, 0])
+      .fitExtent([[8, 8], [W - 8, H - 8]], { type: "FeatureCollection", features: [...south, { type: "Feature", geometry: { type: "MultiPoint", coordinates: pts } }] });
+  }
+  const path = d3.geoPath(proj);
+  for (const p of places()) { const xy = proj([p.x, p.y]); p.px = xy ? xy[0] : null; p.py = xy ? xy[1] : null; }
+
+  // Fast skala over hele perioden, så ukene kan sammenlignes.
+  let max = 1;
+  for (const p of places()) for (const v of p.a) if (v > max) max = v;
+  r = d3.scaleSqrt().domain([0, max]).range([0, Math.max(16, W * 0.03)]);
+
+  svg = d3.select("#map").attr("viewBox", `0 0 ${W} ${H}`);
+  svg.selectAll("*").remove();
+  gRoot = svg.append("g");
+  gLand = gRoot.append("g");
+  const withRigs = new Set(places().map((p) => p.s.toLowerCase()));
+  gLand.selectAll("path").data(feats).join("path")
+    .attr("class", (f) => "land" + (withRigs.has(String(f.properties.name).toLowerCase().replace("québec", "quebec")) ? " has" : ""))
+    .attr("d", path);
+  gB = gRoot.append("g");
+  gL = gRoot.append("g");
+
+  zoom = d3.zoom().scaleExtent([1, 24]).translateExtent([[-W * 0.1, -H * 0.1], [W * 1.1, H * 1.1]])
+    .on("zoom", (e) => { state.t = e.transform; applyZoom(); });
+  svg.call(zoom).on("dblclick.zoom", null);
+  svg.call(zoom.transform, state.t);
+  svg.on("click", (e) => { if (e.target.tagName !== "circle") hideTip(); });
+  $("zin").onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1.8);
+  $("zout").onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1 / 1.8);
+  $("zreset").onclick = () => svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+
+  const c = cfg();
+  $("title").textContent = state.country === "Canada" ? "Rigger per region – Canada" : "Rigger per county – USA";
+  $("sub").textContent = `Ukentlige tall fra Baker Hughes. Boblens areal = antall rigger, fargen = ${c.group.toLowerCase()}. Dra for å panorere, scroll eller knip for å zoome.`;
+  $("legend-title").textContent = c.group;
+  const present = new Set(places().map((p) => c.colorOf(p)));
+  const named = c.order.filter((k) => present.has(k));
+  $("legend").innerHTML = named.map((k, j) => `<li><span class="sw" style="background:var(--s${c.order.indexOf(k) + 1})"></span>${k}</li>`).join("") +
+    `<li><span class="sw" style="background:var(--other)"></span>Andre</li>`;
+  const steps = [1, 10, Math.max(20, Math.round(max / 2 / 10) * 10)].filter((v, i, a) => a.indexOf(v) === i && v <= max);
+  $("size-legend").innerHTML = steps.map((v) => { const d = 2 * r(v); return `<span><i style="width:${d}px;height:${d}px"></i>${fmt(v)}</span>`; }).join("");
+  $("note").textContent = c.note;
+  $("state-title").textContent = c.region;
+}
+
+const rAt = (v, k) => r(v || 0) / Math.pow(k, 0.7);
+
+function applyZoom() {
+  const k = state.t.k;
+  gRoot.attr("transform", state.t);
+  gLand.selectAll("path").attr("stroke-width", 0.6 / k);
+  gB.selectAll("circle").attr("r", (d) => rAt(d.v, k)).attr("stroke-width", 0.8 / k);
+  labels();
+  tipFollow();
+}
+
+function render(animate) {
+  const i = state.i, dates = state.data.dates, k = state.t.k;
+  const pts = places().filter((p) => p.px != null && p.a[i] > 0)
+    .map((p) => ({ p, id: p.id, v: p.a[i], yy: i >= 52 ? p.a[i] - p.a[i - 52] : null }))
+    .sort((a, b) => b.v - a.v);
+  const sel = gB.selectAll("circle").data(pts, (d) => d.id);
+  sel.exit().interrupt().remove();
+  const ent = sel.enter().append("circle").attr("class", "bubble")
+    .attr("cx", (d) => d.p.px).attr("cy", (d) => d.p.py).attr("r", 0)
+    .attr("fill", (d) => colorVar(d.p)).attr("stroke-width", 0.8 / k)
+    .on("pointerenter pointermove", (e, d) => showTip(d.id, e))
+    .on("pointerleave", () => { if (!state.pinned) hideTip(); })
+    .on("click", (e, d) => { e.stopPropagation(); state.pinned = true; showTip(d.id, e); });
+  const all = ent.merge(sel).order();
+  (animate ? all.transition().duration(Math.min(+$("speed").value * 0.9, 250)).ease(d3.easeLinear) : all.interrupt())
+    .attr("r", (d) => rAt(d.v, k));
+  all.classed("active", (d) => d.id === state.active);
+  state.pts = pts;
+  labels();
+
+  const total = pts.reduce((a, d) => a + d.v, 0);
+  $("badge").innerHTML = `${labelW(dates[i])}<small>${fmt(total)} rigger · ${pts.length} ${cfg().units}</small>`;
+  $("slider").value = i;
+
+  const top = pts.slice(0, 10), m1 = top.length ? top[0].v : 1;
+  $("top-title").textContent = `Topp 10 ${cfg().units} · ${labelW(dates[i])}`;
+  $("top").innerHTML = top.map((d, n) => `<li data-k="${d.id}"><span class="rank">${n + 1}</span>
+      <span class="name"><b>${d.p.n}</b><small>${d.p.s}${state.country === "Canada" ? "" : " · " + d.p.b}</small>
+      <span class="bar" style="width:${(d.v / m1) * 100}%;background:${colorVar(d.p)}"></span></span><span class="v">${fmt(d.v)}</span></li>`).join("");
+  $("top").querySelectorAll("li").forEach((li) => li.addEventListener("click", () => focus(li.dataset.k)));
+
+  const bySt = d3.rollups(pts, (v) => d3.sum(v, (d) => d.v), (d) => d.p.s).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const m2 = bySt.length ? bySt[0][1] : 1;
+  $("states").innerHTML = bySt.map(([s, v], n) => `<li><span class="rank">${n + 1}</span>
+      <span class="name"><b>${s}</b><span class="bar" style="width:${(v / m2) * 100}%;background:var(--accent)"></span></span><span class="v">${fmt(v)}</span></li>`).join("");
+
+  if (state.active) { if (pts.some((d) => d.id === state.active)) fillTip(state.active); else hideTip(); }
+}
+
+function labels() {
+  if (!state.pts) return;
+  const k = state.t.k;
+  // Grådig plassering i skjermkoordinater: største bobler først, hopp over navn som kolliderer.
+  const placed = [], shown = [];
+  for (const d of state.pts) {
+    if (rAt(d.v, k) * k < 12 || shown.length >= 40) continue;
+    const w = d.p.n.length * 6.2 + 4, h = 13, x = state.t.applyX(d.p.px) - w / 2, y = state.t.applyY(d.p.py) - h / 2;
+    if (placed.some((b) => x < b.x + b.w && b.x < x + w && y < b.y + b.h && b.y < y + h)) continue;
+    placed.push({ x, y, w, h }); shown.push(d);
+  }
+  gL.selectAll("text").data(shown, (d) => d.id).join("text").attr("class", "lbl")
+    .attr("x", (d) => d.p.px).attr("y", (d) => d.p.py).attr("dy", "0.35em")
+    .style("font-size", `${10 / k}px`).style("stroke-width", `${3 / k}px`)
+    .text((d) => d.p.n);
+}
+
+function focus(id) {
+  const d = state.pts.find((q) => q.id === id);
+  if (!d) return;
+  const k = Math.max(state.t.k, 5);
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(W / 2 - d.p.px * k, H / 2 - d.p.py * k).scale(k))
+    .on("end", () => { state.pinned = true; state.active = id; fillTip(id); tipFollow(); render(false); });
+}
+
+// ------------------------------------------------------------ tooltip
+function fillTip(id) {
+  const d = state.pts.find((q) => q.id === id);
+  if (!d) return;
+  const tip = $("tip");
+  tip.innerHTML = `<div class="t-head">${d.p.n}</div>
+    <div class="row"><span>${d.p.s}</span></div>
+    <div class="row"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${colorVar(d.p)}"></span>${state.country === "Canada" ? d.p.s : d.p.b}</span></div>
+    <div class="row"><span>${labelW(state.data.dates[state.i])}</span><b>${fmt(d.v)} rigger</b></div>` +
+    (d.yy == null ? "" : `<div class="row"><span>Endring å/å</span><b>${signed(d.yy)}</b></div>`);
+  tip.hidden = false;
+}
+function showTip(id, e) {
+  state.active = id;
+  gB.selectAll("circle").classed("active", (d) => d.id === id);
+  fillTip(id); place(e.clientX, e.clientY);
+}
+function tipFollow() {
+  if (!state.active || $("tip").hidden || !state.pts) return;
+  const d = state.pts.find((q) => q.id === state.active);
+  if (!d) return;
+  const box = $("map").getBoundingClientRect(), t = state.t;
+  place(box.left + (t.applyX(d.p.px) / W) * box.width, box.top + (t.applyY(d.p.py) / H) * box.height);
+}
+function place(cx, cy) {
+  const tip = $("tip"), wrap = $("wrap").getBoundingClientRect();
+  let x = cx - wrap.left + 14, y = cy - wrap.top + 14;
+  if (x + tip.offsetWidth > wrap.width - 4) x = cx - wrap.left - tip.offsetWidth - 14;
+  if (y + tip.offsetHeight > wrap.height - 4) y = cy - wrap.top - tip.offsetHeight - 14;
+  tip.style.left = `${Math.max(4, x)}px`; tip.style.top = `${Math.max(4, y)}px`;
+}
+function hideTip() {
+  $("tip").hidden = true; state.active = null; state.pinned = false;
+  if (gB) gB.selectAll("circle").classed("active", false);
+}
+</script>
+</body>
+</html>

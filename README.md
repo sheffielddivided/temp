@@ -5,15 +5,19 @@ Månedlig import av Baker Hughes **Worldwide Rig Count** og en statisk nettside
 
 ```
 raw/                 Worldwide-filer (månedlig, = historikken)
-history/             ukehistorikk USA/Canada fra 2011 (na_weekly.csv) + kilde per uke
-                     (na_sources.json) – kilden til sannhet for ukedataene
+history/             ukehistorikk USA/Canada fra 2011 (na_weekly.csv), per county
+                     (na_county_weekly.csv) + kilde per uke (na_sources.json) –
+                     kilden til sannhet for ukedataene
 scripts/rigcount.py  fetch / ingest / build
 data/                worldwide_long.csv – én rad per måned/land/type/lokasjon
-site/                nettsiden: index.html (graf), map.html (kart + avspiller),
-                     us.html (USA/Canada), upload.html (opplasting),
+site/                nettsiden: index.html (North America), na-map.html (county-kart
+                     USA/Canada), international.html, map.html (verdenskart),
+                     upload.html (opplasting), geo/ (Canadas provinser),
                      data/worldwide.json
 scripts/geo.py       koordinater per land for kartet
 scripts/na.py        parser for North America-filen («NAM Weekly»)
+scripts/na_geo.py    koordinater for counties (us_county_centroids.csv), BOEM-blokker
+                     i Mexicogolfen, Alaska og Canadas BH-regioner
 tests/               parsertester
 ```
 
@@ -119,3 +123,13 @@ Louisiana, Texas, Alabama og Mississippi – regelen gir nøyaktig BHs GOM-tall 
 alle 149 uker i ukerapporten, og testes for hver ny rapport.
 
 Manuelt (lokalt): legg filen i `inbox/` og kjør `python scripts/rigcount.py build`.
+
+## Detaljkart (NA-kart)
+
+`na-map.html` viser rigger per county (USA) og per BH-region (Canada) uke for
+uke fra 2011, med avspiller og zoom. Boblene står på county-tyngdepunkt fra
+us-atlas@3.0.1 (`scripts/us_county_centroids.csv`). Offshore-blokker i
+Mexicogolfen (f.eks. Green Canyon), kartblader i Alaska og Canadas regioner har
+manuelle, omtrentlige punkter i `scripts/na_geo.py`. `tests/test_na_geo.py`
+feiler hvis et nytt sted mangler koordinater, og sjekker at county-historikken
+summerer til nøyaktig samme tall som hovedhistorikken hver uke.

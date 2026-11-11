@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>International Rig Count</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="viz-root">
+  <nav class="nav"><a href="./">North America</a><a href="na-map.html">NA-kart</a><a href="international.html" aria-current="page">International</a><a href="map.html">Verdenskart</a><a href="upload.html">Last opp</a></nav>
+  <header class="page-head">
+    <h1>International Rig Count</h1>
+    <p class="sub">Aktive borerigger per region, månedlig. Kilde: Baker Hughes Worldwide Rig Count.</p>
+  </header>
+
+  <div id="empty" class="empty" hidden>
+    <p><strong>Ingen data ennå.</strong> Legg en Worldwide Rig Count-fil i <code>raw/</code>
+      (<a href="upload.html">last opp her</a>) – så bygges siden automatisk.</p>
+  </div>
+
+  <div id="app" hidden>
+    <section class="tiles" id="tiles"></section>
+
+    <div class="controls" role="toolbar" aria-label="Filtre">
+      <div class="seg" id="section-ctl" aria-label="Seksjon"></div>
+      <div class="seg" id="range-ctl" aria-label="Tidsrom"></div>
+    </div>
+
+    <section class="card">
+      <h2>Rigger per region</h2>
+      <ul class="legend" id="legend"></ul>
+      <div class="chart-wrap" id="chart"></div>
+      <div class="tooltip" id="tip" hidden></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 id="table-title">Siste måned per land</h2>
+        <label class="sel">Region
+          <select id="region-sel"></select>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table id="table">
+          <thead><tr><th>Land</th><th>Region</th><th class="num">Rigger</th><th class="num">Endring m/m</th><th class="num">Endring å/å</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

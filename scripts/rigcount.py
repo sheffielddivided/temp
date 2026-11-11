@@ -36,6 +36,7 @@ DATA = ROOT / "data"
 SITE_DATA = ROOT / "site" / "data"
 NA_HISTORY = ROOT / "history" / "na_weekly.csv"
 NA_SOURCES = ROOT / "history" / "na_sources.json"
+NA_COUNTY = ROOT / "history" / "na_county_weekly.csv"
 
 PAGE_URL = "https://rigcount.bakerhughes.com/intl-rig-count"
 LINK_PATTERN = re.compile(r"worldwide", re.I)
@@ -314,9 +315,10 @@ def cmd_build() -> int:
     na_files = sorted(p for d in (ROOT / "raw-na", ROOT / "inbox") if d.exists()
                       for p in d.glob("*") if p.suffix.lower() in (".xlsx", ".xlsb"))
     if na_files:
-        for line in na.ingest(na_files, NA_HISTORY, NA_SOURCES):
+        for line in na.ingest(na_files, NA_HISTORY, NA_SOURCES, NA_COUNTY):
             print("  " + line)
     na.build(NA_HISTORY, NA_SOURCES, SITE_DATA)
+    na.build_map(NA_COUNTY, NA_SOURCES, SITE_DATA)
 
     last = [r for r in rows if r["date"] == meta["last"]]
     print(f"Totalt {len(rows)} rader, {meta['first']} – {meta['last']}, "
