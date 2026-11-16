@@ -23,6 +23,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -61,7 +62,7 @@ TEMA: dict[str, str] = {
     "Vindkraft": r"vindkraft|landvind|vindturbin|vindpark|vindmølle",
     "Havvind": r"havvind|offshore vind|utsira nord|sørlige nordsjø",
     "Solenergi": r"solenergi|solkraft|solcelle|solpanel",
-    "Vannkraft": r"vannkraft|vasskraft|kraftverk|vassdragsregulering|konsesjonskraft|"
+    "Vannkraft": r"vannkraft|vasskraft|(?<!kjerne)(?<!atom)kraftverk|vassdragsregulering|konsesjonskraft|"
     r"naturressursskatt|grunnrenteskatt på vann|minstevannføring|småkraft",
     "Olje og gass": r"petroleum|olje- og gass|olje og gass|oljeselskap|oljeutslipp|oljevirksomhet|"
     r"oljeproduksjon|oljefelt|oljeindustri|oljeboring|oljeleting|gasseksport|gassproduksjon|"
@@ -72,7 +73,7 @@ TEMA: dict[str, str] = {
     "Kjernekraft": r"kjernekraft|atomkraft|thorium|små modulære reaktor",
     "Energieffektivisering": r"energieffektiv|enøk|varmepumpe|\benova|energisparing|fjernvarme|bioenergi|energimerk",
     "Datasentre": r"datasent",
-    "Klima": r"\bklima|utslipp|klimakvote|kvotesystem|klimagass|lavutslipp|nullutslipp|co2-avgift|karbonprising",
+    "Klima": r"\bklima|utslippskutt|utslippsreduksjon|co2-utslipp|klimakvote|kvotesystem|klimagass|lavutslipp|nullutslipp|co2-avgift|karbonprising",
     "Natur og miljø": r"\bnatur(?!lig)|\bmiljø|\bvern\b|\bverne|forurens|avfall|plast|villrein|"
     r"\bulv|rovvilt|\bskog|\bmyr|biologisk mangfold|friluft",
 }
@@ -491,9 +492,124 @@ def fetch_regjeringen() -> list[dict]:
 
 
 # --------------------------------------------------------------------------
+# Eksterne høringer: regjeringen.no og Miljødirektoratet
+# --------------------------------------------------------------------------
+PETROLEUM_RE = re.compile(TEMA["Olje og gass"] + r"|havindustri|havbunnsmineral|petroleumstilsyn", re.I)
+_HORING_RE = re.compile(r"\bh(ø|oe)ring|\bhøyring", re.I)
+_DEP_RE = re.compile(r"^((?:[A-ZÆØÅ]\w*-(?:,? \w+-)* og )?\w*departementet)\b")
+MDIR = "https://www.miljodirektoratet.no"
+MDIR_API = MDIR + "/hearingslistpage/gethearings"
+MDIR_OLJE_GASS, MDIR_KLIMA = 6169, 4389  # emne-id-er i Miljødirektoratets høringsliste
+
+
+def _ekstern(**k) -> dict:
+    t = tema_for(k.get("tittel"), k.get("beskrivelse"), " ".join(k.get("emner") or []))
+    k.setdefault("tema", t)
+    return k
+
+
+def avsender_fra(beskrivelse: str | None) -> str:
+    m = _DEP_RE.match(beskrivelse or "")
+    return m.group(1) if m else "Regjeringen"
+
+
+def fetch_reg_horinger(prev: list[dict]) -> list[dict]:
+    """Høringer fra regjeringen.no via RSS (eksportsiden er bak bot-sperre).
+
+    - Energidepartementet: alle høringer.
+    - Alle departementer: høringer som gjelder petroleum/olje og gass.
+    Feedene viser bare de siste ~100 dokumentene, så vi slår sammen med det vi
+    har fra før. Frist finnes ikke i RSS – den står på høringssiden.
+    """
+    out: dict[str, dict] = {h["url"]: h for h in prev if h.get("kilde") == "regjeringen"}
+    ed = parse_rss(get(f"{REG_RSS}?documentType=dokumenter&owner={REG_OWNER}"))
+    alle = parse_rss(get(f"{REG_RSS}?documentType=dokumenter"))
+    for it, fra_ed in [(x, True) for x in ed] + [(x, False) for x in alle]:
+        if not _HORING_RE.search(it["title"]):
+            continue
+        tekst = f"{it['title']} {it['description']}"
+        petro = bool(PETROLEUM_RE.search(tekst))
+        if not fra_ed and not petro:
+            continue
+        avsender = "Energidepartementet" if fra_ed else avsender_fra(it["description"])
+        old = out.get(it["link"], {})
+        out[it["link"]] = _ekstern(
+            id=it["link"], kilde="regjeringen", avsender=avsender, tittel=it["title"],
+            beskrivelse=it["description"][:500], publisert=(it["date"] or "")[:10] or old.get("publisert"),
+            frist=None, status=None, saksnr=None, emner=["Petroleum"] if petro else [],
+            energi=True, url=it["link"],
+        )
+    return sorted(out.values(), key=lambda h: h["publisert"] or "", reverse=True)
+
+
+def _mdir_date(s: str | None) -> str | None:
+    try:
+        return dt.datetime.strptime(s, "%d.%m.%Y").date().isoformat() if s else None
+    except ValueError:
+        return None
+
+
+def fetch_mdir_horinger(prev: list[dict]) -> list[dict]:
+    """Miljødirektoratets høringer (JSON-endepunktet bak høringssiden).
+
+    Alle aktive høringer hentes, pluss nylig avsluttede innen olje og gass og
+    klima. Vi tar med høringer om olje og gass, og andre med energitema; rene
+    klimahøringer merkes som ikke-energi (vises med «klima og miljø»-bryteren).
+    """
+    def page(**params):
+        q = urllib.parse.urlencode(params)
+        return json.loads(get(f"{MDIR_API}?{q}"))
+
+    rows: list[tuple[dict, bool]] = []
+    skip, total = 0, 1
+    while skip < total and skip < 200:
+        d = page(skip=skip, searchExpired="false")
+        total = d.get("totalMatching") or 0
+        rows += [(h, False) for h in d.get("hearings") or []]
+        skip += 20
+    for subj, n in ((MDIR_OLJE_GASS, 40), (MDIR_KLIMA, 20)):
+        for skip in range(0, n, 20):
+            rows += [(h, True) for h in page(skip=skip, subjectids=subj, searchExpired="true").get("hearings") or []]
+
+    out: dict[str, dict] = {h["url"]: h for h in prev if h.get("kilde") == "miljodirektoratet"}
+    today = dt.date.today().isoformat()
+    for h, _expired in rows:
+        emner = h.get("subjects") or []
+        t = tema_for(h.get("title"), " ".join(emner))
+        olje = "Olje og gass" in emner
+        energi = olje or bool(set(t) & ENERGI_TEMA)
+        klima = "Klima" in emner
+        if not (energi or klima):
+            continue
+        url = MDIR + h["url"] if h.get("url", "").startswith("/") else h.get("url")
+        frist = _mdir_date(h.get("deadline"))
+        if olje and "Olje og gass" not in t:
+            t = ["Olje og gass", *t]
+        out[url] = _ekstern(
+            id=url, kilde="miljodirektoratet", avsender="Miljødirektoratet", tittel=clean(h.get("title")),
+            beskrivelse="", publisert=_mdir_date(h.get("published")), frist=frist,
+            status=("åpen" if frist and frist >= today else "avsluttet") if frist else None,
+            saksnr=h.get("hearingNumber"), emner=emner, energi=energi, url=url, tema=t,
+        )
+    # Vurder eldre oppføringer på nytt (regler og tema kan ha endret seg)
+    for h in list(out.values()):
+        t = tema_for(h["tittel"], " ".join(h["emner"]))
+        if "Olje og gass" in h["emner"] and "Olje og gass" not in t:
+            t = ["Olje og gass", *t]
+        h["tema"] = t
+        h["energi"] = "Olje og gass" in h["emner"] or bool(set(t) & ENERGI_TEMA)
+        if not (h["energi"] or "Klima" in h["emner"]):
+            del out[h["url"]]
+    for h in out.values():
+        if h.get("frist"):
+            h["status"] = "åpen" if h["frist"] >= today else "avsluttet"
+    return sorted(out.values(), key=lambda h: h["publisert"] or "", reverse=True)
+
+
+# --------------------------------------------------------------------------
 # Avledede lister: kalender og aktivitet
 # --------------------------------------------------------------------------
-def build_kalender(saker, horinger, dagsorden, nyheter) -> list[dict]:
+def build_kalender(saker, horinger, dagsorden, nyheter, eksterne=()) -> list[dict]:
     today = dt.date.today().isoformat()
     by_id = {s["id"]: s for s in saker}
     cal = []
@@ -527,6 +643,9 @@ def build_kalender(saker, horinger, dagsorden, nyheter) -> list[dict]:
     for n in nyheter:
         if n["kategori"] == "kalender" and n["dato"] and n["dato"][:10] >= today:
             add(dato=n["dato"], type="minister", label="Statsrådens kalender", tittel=n["tittel"], url=n["url"], energi=True)
+    for h in eksterne:
+        if h.get("frist") and h["frist"] >= today:
+            add(dato=h["frist"], type="horing", label=f"Høringsfrist – {h['avsender']}", tittel=h["tittel"], url=h["url"], energi=h["energi"])
     for c in cal:
         if c.get("energi") is None:
             c["energi"] = by_id[c["sak_id"]]["energi"] if c.get("sak_id") in by_id else False
@@ -540,7 +659,7 @@ def build_kalender(saker, horinger, dagsorden, nyheter) -> list[dict]:
     return uniq
 
 
-def build_aktivitet(saker, sporsmal, nyheter) -> list[dict]:
+def build_aktivitet(saker, sporsmal, nyheter, eksterne=()) -> list[dict]:
     today = dt.date.today().isoformat()
     akt = []
     for s in saker:
@@ -563,6 +682,11 @@ def build_aktivitet(saker, sporsmal, nyheter) -> list[dict]:
     for n in nyheter:
         if n["kategori"] == "nyhet" and n["dato"]:
             akt.append({"dato": n["dato"], "type": "regjeringen", "label": "Regjeringen", "tittel": n["tittel"], "url": n["url"], "meta": n["beskrivelse"][:200], "energi": True, "tema": []})
+    for h in eksterne:
+        if h.get("publisert"):
+            frist = f"Frist {dt.date.fromisoformat(h['frist']).strftime('%d.%m.%Y')}" if h.get("frist") else None
+            akt.append({"dato": h["publisert"], "type": "ekstern_horing", "label": f"Ny høring – {h['avsender']}", "tittel": h["tittel"],
+                        "url": h["url"], "meta": " · ".join(x for x in (frist, h.get("saksnr")) if x) or None, "energi": h["energi"], "tema": h["tema"]})
     akt = [a for a in akt if a["dato"][:10] <= today]
     akt.sort(key=lambda a: a["dato"], reverse=True)
     return akt[:400]
@@ -635,6 +759,12 @@ def main() -> int:
     dagsorden = run("Stortinget API: dagsorden", lambda: fetch_dagsorden(cur, {s["id"] for s in saker}, {q["id"] for q in spm}),
                     prev.get("dagsorden", []))
     nyheter = run("Regjeringen.no: Energidepartementet", fetch_regjeringen, prev.get("nyheter", []))
+    prev_ext = prev.get("eksterne_horinger", [])
+    reg_h = run("Regjeringen.no: høringer (ED + petroleum)", lambda: fetch_reg_horinger(prev_ext),
+                [h for h in prev_ext if h["kilde"] == "regjeringen"])
+    mdir_h = run("Miljødirektoratet: høringer", lambda: fetch_mdir_horinger(prev_ext),
+                 [h for h in prev_ext if h["kilde"] == "miljodirektoratet"])
+    eksterne = sorted(reg_h + mdir_h, key=lambda h: h.get("publisert") or "", reverse=True)
 
     if not saker and not spm:
         print("Ingen data – avbryter uten å skrive.", file=sys.stderr)
@@ -655,8 +785,9 @@ def main() -> int:
         "horinger": horinger,
         "dagsorden": dagsorden,
         "nyheter": nyheter[:120],
-        "kalender": build_kalender(saker, horinger, dagsorden, nyheter),
-        "aktivitet": build_aktivitet(saker, spm, nyheter),
+        "eksterne_horinger": eksterne,
+        "kalender": build_kalender(saker, horinger, dagsorden, nyheter, eksterne),
+        "aktivitet": build_aktivitet(saker, spm, nyheter, eksterne),
     }
     # «endret» flyttes bare når selve innholdet endrer seg, slik at workflowen
     # kan la være å committe når ingenting nytt har skjedd.

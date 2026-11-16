@@ -99,7 +99,7 @@ svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
     background: var(--surface); border-top: 1px solid var(--line); justify-content: space-around; gap: 0;
     box-shadow: 0 -4px 20px rgba(0,0,0,.06);
   }
-  .tabs a { flex-direction: column; gap: 3px; flex: 1; padding: 7px 2px 6px; font-size: 11px; color: var(--ink-3); border: 0; border-radius: 10px; }
+  .tabs a { flex-direction: column; gap: 3px; flex: 1; min-width: 0; padding: 7px 0 6px; font-size: 10.5px; color: var(--ink-3); border: 0; border-radius: 10px; }
   .tabs a[aria-current="page"] { color: var(--ink); }
   .tabs a[aria-current="page"] svg { color: var(--c-amber); }
   .tabs svg { width: 23px; height: 23px; }

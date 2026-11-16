@@ -113,3 +113,17 @@ def test_data_og_feed_er_gyldige():
     feed = ROOT / "site" / "feed.xml"
     root = ET.parse(feed).getroot()
     assert root.tag == "rss" and root.find("channel/title").text == "Energi på Stortinget"
+
+
+def test_eksterne_horinger_hjelpere():
+    assert F.avsender_fra("Landbruks- og matdepartementet sender med dette NOU 2026:13 på høring") == "Landbruks- og matdepartementet"
+    assert F.avsender_fra("Energidepartementet foreslår endringer i energiloven") == "Energidepartementet"
+    assert F.avsender_fra("Kommisjonens gjennomføringsforordning") == "Regjeringen"
+    assert F._HORING_RE.search("Høring av forslag til endringer i petroleumsforskriften")
+    assert F._HORING_RE.search("Høyring – endringar i forskrift")
+    assert not F._HORING_RE.search("Prop. 1 S (2026–2027)")
+    assert F.PETROLEUM_RE.search("endringer i petroleumsskatteloven")
+    assert F.PETROLEUM_RE.search("sikkerhet i havindustrien")
+    assert not F.PETROLEUM_RE.search("Kunstig intelligens i høyere utdanning")
+    assert "Kjernekraft" in F.tema_for("planer om nytt kjernekraftverk i Helsinki")
+    assert "Vannkraft" not in F.tema_for("planer om nytt kjernekraftverk i Helsinki")

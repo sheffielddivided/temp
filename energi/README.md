@@ -11,7 +11,7 @@ Publiseres på GitHub Pages under `/energi/`
 energi/
   fetch.py             henter og bearbeider data (bare standardbiblioteket)
   site/index.html      nettsiden (vanlig HTML/CSS/JS, ingen byggesteg)
-  site/app.js          visninger, filtre, søk, ruting (#/saker/123 osv.)
+  site/app.js          visninger, filtre, søk, ruting (#/saker/123, #/horinger osv.)
   site/style.css       lyst og mørkt tema, mobil med bunnmeny
   site/data/energi.json  generert data
   site/feed.xml        generert RSS (siste 80 energihendelser)
@@ -29,6 +29,29 @@ energi/
 | `…/horinger` | høringer i Energi- og miljøkomiteen | innspillsfrister, tidspunkt |
 | `…/moter`, `/dagsorden` | når sakene står på dagsorden i plenum | 7 dager bakover, 45 dager fram |
 | regjeringen.no RSS (`owner=750`) | nyheter og statsrådens program fra Energidepartementet | |
+| regjeringen.no RSS (`documentType=dokumenter`, med og uten `owner=750`) | høringer fra Energidepartementet, og høringer om petroleum fra alle departementer | se under |
+| `miljodirektoratet.no/hearingslistpage/gethearings` | Miljødirektoratets høringer med frist, saksnummer og emne | aktive høringer og nylig avsluttede innen olje og gass og klima |
+
+### Høringer fra regjeringen.no
+
+Eksportsiden for høringer (`/oversyn-over-hoyringssaker/id546535/Export`) er bak
+Cloudflare-sperre og kan ikke hentes automatisk. Derfor brukes regjeringens
+RSS-feeder for dokumenter:
+
+- Høringer fra Energidepartementet tas med.
+- Høringer fra alle departementer tas med når tittel eller ingress gjelder
+  petroleum, olje og gass eller havindustri (`PETROLEUM_RE`).
+
+Feeden for alle departementer viser bare de siste ~100 dokumentene. Derfor slås
+nye treff sammen med det som er lagret fra før, slik at listen bygges opp over
+tid. RSS har ikke høringsfrist. Fristen står på høringssiden, og siden lenker
+dit.
+
+### Høringer fra Miljødirektoratet
+
+Høringer med emnet «Olje og gass» eller med energitema i tittelen regnes som
+energi. Høringer med emnet «Klima» tas med, men vises bare når bryteren «Ta med
+klima og miljø» er på.
 
 ### Hva regnes som en energisak?
 
