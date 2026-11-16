@@ -1,5 +1,8 @@
 # Worldwide Rig Count
 
+> Repoet inneholder også **[Energi på Stortinget](energi/README.md)** – en egen
+> side for energisaker på Stortinget, publisert under `/energi/`.
+
 Månedlig import av Baker Hughes **Worldwide Rig Count** og en statisk nettside
 (GitHub Pages) som visualiserer antall rigger per region og land.
 
