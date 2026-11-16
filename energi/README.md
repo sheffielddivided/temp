@@ -10,6 +10,7 @@ Publiseres på GitHub Pages under `/energi/`
 ```
 energi/
   fetch.py             henter og bearbeider data (bare standardbiblioteket)
+  ku.py                parsere for operatørenes konsekvensutredninger
   site/index.html      nettsiden (vanlig HTML/CSS/JS, ingen byggesteg)
   site/app.js          visninger, filtre, søk, ruting (#/saker/123, #/horinger osv.)
   site/style.css       lyst og mørkt tema, mobil med bunnmeny
@@ -31,6 +32,11 @@ energi/
 | regjeringen.no RSS (`owner=750`) | nyheter og statsrådens program fra Energidepartementet | |
 | regjeringen.no RSS (`documentType=dokumenter`, med og uten `owner=750`) | høringer fra Energidepartementet, og høringer om petroleum fra alle departementer | se under |
 | `miljodirektoratet.no/hearingslistpage/gethearings` | Miljødirektoratets høringer med frist, saksnummer og emne | aktive høringer og nylig avsluttede innen olje og gass og klima |
+| Equinor: `equinor.com/no/baerekraft/konsekvensutredninger` | KU-dokumenter per prosjekt (høringsbrev, programforslag, KU) | data leses fra den innebygde Next.js-strømmen; norske prosjekter |
+| Vår Energi: `varenergi.no/no/var-virksomhet/konsekvensutredninger/` | pågående og gjennomførte KU-høringer med frist og datoer | HTML |
+| Aker BP: `akerbp.com/wp-json/wp/v2/media` | KU-dokumenter med publiseringsdato (siste 18 mnd.) | WordPress-API |
+| Stortingets RSS «Aktuelt-saker» | aktuelt fra Stortinget om energi, og «Uke NN på Stortinget» | vises under Nyheter |
+| Stortingets RSS «Stortingsvedtak» | lenke til vedtaket i saker vi følger | |
 
 ### Høringer fra regjeringen.no
 
@@ -52,6 +58,21 @@ dit.
 Høringer med emnet «Olje og gass» eller med energitema i tittelen regnes som
 energi. Høringer med emnet «Klima» tas med, men vises bare når bryteren «Ta med
 klima og miljø» er på.
+
+### Konsekvensutredninger fra operatørene (`ku.py`)
+
+KU-høringer for PUD/PAD og avslutningsplaner vises som egne kort under
+Høringer → «Operatører (KU)», med de nyeste dokumentene og eventuell frist.
+
+- **Vår Energi** oppgir frist og dato for hvert dokument.
+- **Aker BP** har dato per dokument fra mediebiblioteket. Dokumentene grupperes
+  per prosjekt ut fra tittelen (`akerbp_prosjekt`).
+- **Equinor** har ikke datoer på siden. Dato hentes fra filnavnet når den står
+  der, og ellers settes den til dagen dokumentet ble oppdaget første gang.
+  Første kjøring får ingen slike datoer, slik at eldre dokumenter ikke ser nye
+  ut.
+
+Hver operatør hentes for seg. Hvis én feiler, beholdes forrige data for den.
 
 ### Hva regnes som en energisak?
 

@@ -29,7 +29,7 @@
     hear: '<svg viewBox="0 0 24 24"><path d="M7 4h10a2 2 0 0 1 2 2v14l-4-2.5-3 2-3-2L5 20V6a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 9h6M9 12.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>',
   };
-  const FEED_IC = { ny_sak: ["doc", "blue"], innstilling: ["gavel", "violet"], vedtak: ["check", "green"], spm: ["ask", "amber"], svar: ["reply", "green"], regjeringen: ["gov", ""], ekstern_horing: ["hear", "violet"] };
+  const FEED_IC = { ny_sak: ["doc", "blue"], innstilling: ["gavel", "violet"], vedtak: ["check", "green"], spm: ["ask", "amber"], svar: ["reply", "green"], regjeringen: ["gov", ""], ekstern_horing: ["hear", "violet"], stortinget: ["gov", "blue"] };
 
   // ---------- Hjelpere ----------
   const $ = (s, el = document) => el.querySelector(s);
@@ -335,16 +335,16 @@
   function viewRegjeringen() {
     const u = ui.reg;
     main.innerHTML = `
-      <div class="page-head"><div><h1>Regjeringen</h1><p>Nyheter, pressemeldinger og statsrådens program fra Energidepartementet.</p></div></div>
+      <div class="page-head"><div><h1>Regjeringen</h1><p>Nyheter og statsrådens program fra Energidepartementet, og aktuelt fra Stortinget.</p></div></div>
       <div class="toolbar">${searchBox("rq", u.q, "Søk i nyheter …")}<div id="rSeg"></div></div>
       <section class="panel flush"><ul class="feed" id="rList"></ul></section>`;
     const render = () => {
       const q = norm(u.q).trim();
       const base = D.nyheter.filter((n) => !q || norm(n.tittel + " " + n.beskrivelse).includes(q));
       const c = (k) => base.filter((n) => !k || n.kategori === k).length;
-      $("#rSeg").innerHTML = seg("rS", [["nyhet", "Nyheter", c("nyhet")], ["kalender", "Statsrådens program", c("kalender")], ["", "Alt", c("")]], u.kat);
+      $("#rSeg").innerHTML = seg("rS", [["nyhet", "Energidepartementet", c("nyhet")], ["stortinget", "Stortinget", c("stortinget")], ["kalender", "Statsrådens program", c("kalender")], ["", "Alt", c("")]], u.kat);
       const list = base.filter((n) => !u.kat || n.kategori === u.kat);
-      $("#rList").innerHTML = list.length ? list.map((n) => `<li class="clickable" data-href="${esc(n.url)}" data-ext="1"><span class="ic ${n.kategori === "kalender" ? "green" : ""}">${n.kategori === "kalender" ? I.clock : I.gov}</span><div><div class="lbl"><b>${n.kategori === "kalender" ? "Program" : "Nyhet"}</b><span>${esc(fmt(n.dato, true))}${fmtTime(n.dato) ? ` kl. ${fmtTime(n.dato)}` : ""}</span></div><a class="t" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.tittel)}</a>${n.beskrivelse ? `<div class="m">${esc(n.beskrivelse.slice(0, 240))}</div>` : ""}</div></li>`).join("") : `<li>${empty("Ingen treff")}</li>`;
+      $("#rList").innerHTML = list.length ? list.map((n) => `<li class="clickable" data-href="${esc(n.url)}" data-ext="1"><span class="ic ${n.kategori === "kalender" ? "green" : n.kategori === "stortinget" ? "blue" : ""}">${n.kategori === "kalender" ? I.clock : I.gov}</span><div><div class="lbl"><b>${n.kategori === "kalender" ? "Program" : n.kategori === "stortinget" ? "Stortinget" : "Energidepartementet"}</b><span>${esc(fmt(n.dato, true))}${fmtTime(n.dato) ? ` kl. ${fmtTime(n.dato)}` : ""}</span></div><a class="t" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.tittel)}</a>${n.beskrivelse ? `<div class="m">${esc(n.beskrivelse.slice(0, 240))}</div>` : ""}</div></li>`).join("") : `<li>${empty("Ingen treff")}</li>`;
       $("#rS").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { u.kat = b.dataset.v; save(); render(); } });
     };
     $("#rq").addEventListener("input", debounce((e) => { u.q = e.target.value; save(); render(); }));
@@ -352,7 +352,7 @@
   }
 
   // ---------- Høringer ----------
-  const KILDE = { stortinget: ["Stortinget", "blue"], regjeringen: ["Regjeringen", "violet"], miljodirektoratet: ["Miljødirektoratet", "green"] };
+  const KILDE = { stortinget: ["Stortinget", "blue"], regjeringen: ["Regjeringen", "violet"], miljodirektoratet: ["Miljødirektoratet", "green"], operator: ["Operatør", "amber"] };
   const horScope = (h) => ui.scope === "alle" || h.energi;
   const aktuell = (h) => (h.frist ? h.frist >= TODAY : !!h.publisert && daysBetween(h.publisert, TODAY) <= 90);
   function buildHoringer() {
@@ -378,6 +378,15 @@
       fr = dleft < 0 ? `<span>Frist var ${esc(fmt(h.frist, true))}</span>`
         : `${pill(`Frist ${fmt(h.frist)}${fmtTime(h.fristTid) ? " kl. " + fmtTime(h.fristTid) : ""}`, dleft <= 7 ? "amber" : "green", true)} <span>${esc(rel(h.frist))}</span>`;
     } else fr = `<span>Sendt ut ${esc(fmt(h.publisert, true))} · frist står på høringssiden</span>`;
+    if (h.dokumenter?.length) {
+      return `<div class="card ku">
+      <div class="row1">${pill("KU-høring", k[1])}<span class="ref">${esc(h.avsender)}</span>${h.status === "åpen" ? pill("Pågår", "green", true) : ""}</div>
+      <h3><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.tittel.replace(/^Konsekvensutredning: /, ""))}</a></h3>
+      ${h.beskrivelse ? `<p class="q" style="-webkit-line-clamp:2;margin-top:6px;font-size:14px;color:var(--ink-2)">${esc(h.beskrivelse)}</p>` : ""}
+      <ul class="docs">${h.dokumenter.slice(0, 4).map((d) => `<li><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.tittel)}</a>${d.dato ? `<time>${esc(fmt(d.dato, true))}</time>` : ""}</li>`).join("")}${h.dokumenter.length > 4 ? `<li class="more-docs"><a href="${esc(h.url)}" target="_blank" rel="noopener">${h.dokumenter.length - 4} dokumenter til hos ${esc(h.avsender)}</a></li>` : ""}</ul>
+      <div class="foot-row"><span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${h.frist ? fr : h.publisert ? `<span>Sist publisert ${esc(fmt(h.publisert, true))}</span>` : "<span>Dato ikke oppgitt</span>"}</span><span style="display:flex;gap:5px;flex-wrap:wrap">${(h.tema || []).slice(0, 3).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</span></div>
+    </div>`;
+    }
     return `<a class="card" href="${esc(h.href)}" ${h.ext ? 'target="_blank" rel="noopener"' : ""}>
       <div class="row1">${pill(k[0], k[1])}${h.avsender !== k[0] ? `<span class="ref">${esc(h.avsender)}</span>` : ""}${h.saksnr ? `<span>${esc(h.saksnr)}</span>` : ""}</div>
       <h3>${esc(h.tittel)}</h3>
@@ -388,7 +397,7 @@
   function viewHoringer() {
     const u = ui.hor;
     main.innerHTML = `
-      <div class="page-head"><div><h1>Høringer</h1><p>Høringer i Stortinget, fra Energidepartementet, om petroleum fra andre departementer og fra Miljødirektoratet.</p></div>${scopeSwitch()}</div>
+      <div class="page-head"><div><h1>Høringer</h1><p>Høringer i Stortinget, fra Energidepartementet, om petroleum fra andre departementer, fra Miljødirektoratet og operatørenes konsekvensutredninger (Equinor, Aker BP, Vår Energi).</p></div>${scopeSwitch()}</div>
       <div class="toolbar">${searchBox("hq", u.q, "Søk i høringer, f.eks. Equinor, vindkraft …")}<div id="hVis"></div></div>
       <div id="hSeg" style="margin-bottom:12px"></div>
       <div class="result-meta" id="hMeta"></div>
@@ -398,7 +407,7 @@
       const base = D.hor.filter((h) => horScope(h) && (u.vis === "alle" || aktuell(h)) && (!q || norm(`${h.tittel} ${h.beskrivelse} ${h.avsender} ${h.saksnr} ${(h.tema || []).join(" ")}`).includes(q)));
       const n = (k) => base.filter((h) => !k || h.kilde === k).length;
       $("#hVis").innerHTML = seg("hV", [["aktuelle", "Aktuelle"], ["alle", "Alle"]], u.vis);
-      $("#hSeg").innerHTML = seg("hK", [["", "Alle kilder", n("")], ["stortinget", "Stortinget", n("stortinget")], ["regjeringen", "Regjeringen", n("regjeringen")], ["miljodirektoratet", "Miljødirektoratet", n("miljodirektoratet")]], u.kilde);
+      $("#hSeg").innerHTML = seg("hK", [["", "Alle kilder", n("")], ["stortinget", "Stortinget", n("stortinget")], ["regjeringen", "Regjeringen", n("regjeringen")], ["miljodirektoratet", "Miljødirektoratet", n("miljodirektoratet")], ["operator", "Operatører (KU)", n("operator")]], u.kilde);
       const list = base.filter((h) => !u.kilde || h.kilde === u.kilde);
       if (u.vis === "aktuelle") list.sort((a, b) => (a.frist && b.frist ? a.frist.localeCompare(b.frist) : a.frist ? -1 : b.frist ? 1 : (b.publisert || "").localeCompare(a.publisert || "")));
       else list.sort((a, b) => (b.publisert || b.frist || "").localeCompare(a.publisert || a.frist || ""));
@@ -460,6 +469,7 @@
       ${s.kortvedtak ? `<h4>Vedtak</h4><p class="quote">${esc(s.kortvedtak)}</p>` : s.vedtakstekst ? `<h4>Vedtak</h4><p class="quote">${esc(s.vedtakstekst)}</p>` : ""}
       ${tl.length ? `<h4>Saksgang</h4><ol class="tl">${tl.map((h) => `<li class="${h.fut ? "future" : ""}"><time>${esc(fmt(h.dato, true))}</time>${esc(h.label)}</li>`).join("")}</ol>` : ""}
       ${hor.length ? `<h4>Høring</h4><div class="links">${hor.map((h) => `<a href="${esc(h.url)}" target="_blank" rel="noopener">${h.skriftlig ? "Skriftlig høring" : "Høring"}${h.innspillsfrist ? ` – frist ${esc(fmt(h.innspillsfrist, true))}` : ""}</a>`).join("")}</div>` : ""}
+      ${s.vedtak_url ? `<h4>Vedtak</h4><div class="links"><a href="${esc(s.vedtak_url)}" target="_blank" rel="noopener">Stortingsvedtaket${s.vedtak_dato ? ` – ${esc(fmt(s.vedtak_dato, true))}` : ""}</a></div>` : ""}
       ${s.publikasjoner?.length ? `<h4>Dokumenter</h4><div class="links">${s.publikasjoner.slice(0, 12).map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.tekst)}</a>`).join("")}</div>` : ""}
       <a class="cta" href="${esc(s.url)}" target="_blank" rel="noopener">Åpne saken på stortinget.no ↗</a>`;
   }
@@ -519,7 +529,7 @@
   function footer() {
     const k = Object.entries(D.kilder);
     $("#foot").innerHTML = `<details><summary>Om siden og datakildene</summary>
-      <p>Data hentes automatisk fra <a href="https://data.stortinget.no" target="_blank" rel="noopener">Stortingets åpne data</a>, Stortingets RSS-feeder (ubesvarte spørsmål og hovedtema Energi) , <a href="https://www.regjeringen.no/no/dokument/hoyringar/id1763/" target="_blank" rel="noopener">regjeringen.no</a> (nyheter og høringer fra Energidepartementet, og høringer om petroleum fra alle departementer) og <a href="https://www.miljodirektoratet.no/hoeringer/" target="_blank" rel="noopener">Miljødirektoratets høringer</a> (olje og gass, energi og klima). Høringsfrister fra regjeringen.no står bare på selve høringssiden. Saker regnes som energisaker når de er merket med energitema av Stortinget, eller tittelen inneholder energirelaterte ord. Sist oppdatert ${esc(fmt(D.generert, true))} kl. ${esc(fmtTime(D.generert))}.</p>
+      <p>Data hentes automatisk fra <a href="https://data.stortinget.no" target="_blank" rel="noopener">Stortingets åpne data</a>, Stortingets RSS-feeder (ubesvarte spørsmål og hovedtema Energi) , <a href="https://www.regjeringen.no/no/dokument/hoyringar/id1763/" target="_blank" rel="noopener">regjeringen.no</a> (nyheter og høringer fra Energidepartementet, og høringer om petroleum fra alle departementer), <a href="https://www.miljodirektoratet.no/hoeringer/" target="_blank" rel="noopener">Miljødirektoratets høringer</a> (olje og gass, energi og klima) og konsekvensutredninger fra <a href="https://www.equinor.com/no/baerekraft/konsekvensutredninger" target="_blank" rel="noopener">Equinor</a>, <a href="https://akerbp.com/var-virksomhet/" target="_blank" rel="noopener">Aker BP</a> og <a href="https://varenergi.no/no/var-virksomhet/konsekvensutredninger/" target="_blank" rel="noopener">Vår Energi</a>. Høringsfrister fra regjeringen.no står bare på selve høringssiden. Saker regnes som energisaker når de er merket med energitema av Stortinget, eller tittelen inneholder energirelaterte ord. Sist oppdatert ${esc(fmt(D.generert, true))} kl. ${esc(fmtTime(D.generert))}.</p>
       <ul>${k.map(([n, v]) => `<li><span class="${v.ok ? "ok" : "err"}">${v.ok ? "✓" : "✗"}</span> ${esc(n)}${v.ok ? (v.antall !== null ? ` – ${v.antall}` : "") : ` – feil: ${esc(v.feil)}`}</li>`).join("")}</ul>
       <p>Abonner på nye hendelser med <a href="feed.xml">RSS-feeden</a>.</p></details>`;
   }
