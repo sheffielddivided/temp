@@ -30,10 +30,20 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ku  # noqa: E402
+import personer as P  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent
 SITE = ROOT / "site"
 OUT_JSON = SITE / "data" / "energi.json"
 OUT_RSS = SITE / "feed.xml"
+OUT_PERSONER = SITE / "data" / "personer.json"
+PERS_DIR = SITE / "data" / "personer"
+BIO_CACHE = ROOT / ".cache" / "biografier.json"  # ikke i git; actions/cache i CI
+
+# Rådata fra listene (alle tema) – brukes til profilkortene.
+RAW: dict[str, list] = {"saker": [], "sporsmal": []}
 
 API = "https://data.stortinget.no/eksport"
 ST = "https://www.stortinget.no"
@@ -147,7 +157,7 @@ def get(url: str, *, retries: int = 5, timeout: int = 40) -> bytes:
 
 
 def api(path: str, **params) -> dict:
-    q = "&".join(f"{k}={v}" for k, v in params.items())
+    q = urllib.parse.urlencode(params)
     return json.loads(get(f"{API}/{path}?{q}{'&' if q else ''}format=json"))
 
 
@@ -229,6 +239,7 @@ def fetch_saker(sesj: list[str], tema_ids: set[int]) -> list[dict]:
     raw: dict[int, tuple[str, dict]] = {}
     for s in sesj:
         for x in api("saker", sesjonid=s)["saker_liste"]:
+            RAW["saker"].append((s, x))
             kom = (x.get("komite") or {}).get("id")
             emner = {e["navn"].lower() for e in x.get("emne_liste") or []}
             t = tema_for(x.get("korttittel"))
@@ -379,6 +390,7 @@ def fetch_sporsmal(sesj: list[str]) -> list[dict]:
     for s in sesj:
         for ep in ("skriftligesporsmal", "sporretimesporsmal", "interpellasjoner"):
             for x in api(ep, sesjonid=s)["sporsmal_liste"]:
+                RAW["sporsmal"].append((s, x))
                 q = build_spm(x, s)
                 if q:
                     out[q["id"]] = q
@@ -631,6 +643,96 @@ def fetch_mdir_horinger(prev: list[dict]) -> list[dict]:
 
 
 # --------------------------------------------------------------------------
+# Operatørenes KU-høringer (Equinor, Aker BP, Vår Energi)
+# --------------------------------------------------------------------------
+def fetch_operator_ku(prev: list[dict]) -> tuple[list[dict], dict]:
+    """Henter KU-prosjekter fra operatørene. Hver operatør feiler for seg."""
+    today = dt.date.today().isoformat()
+    status: dict[str, dict] = {}
+    prosjekter: list[dict] = []
+
+    def one(name, fn):
+        t0 = time.time()
+        try:
+            ps = fn()
+            prosjekter.extend(ps)
+            status[name] = {"ok": True, "antall": len(ps), "sek": round(time.time() - t0, 1)}
+        except Exception as e:
+            status[name] = {"ok": False, "feil": str(e)[:300]}
+            prosjekter.extend(p for p in prev_projects if p["operator"] == name.split(": ")[1])
+
+    prev_projects = [h["_prosjekt"] for h in prev if h.get("kilde") == "operator" and h.get("_prosjekt")]
+    one("Operatør: Equinor", lambda: ku.parse_equinor(get(ku.EQUINOR_URL).decode("utf-8", "replace")))
+    one("Operatør: Vår Energi", lambda: ku.parse_varenergi(get(ku.VAREN_URL).decode("utf-8", "replace"), today))
+
+    def akerbp():
+        after = (dt.date.today() - dt.timedelta(days=540)).isoformat() + "T00:00:00"
+        media, seen = [], set()
+        for q in ku.AKERBP_SOK:
+            params = urllib.parse.urlencode({"search": q, "per_page": 100, "mime_type": "application/pdf",
+                                             "after": after, "_fields": "id,date,title,source_url"})
+            for m in json.loads(get(f"{ku.AKERBP_API}?{params}")):
+                if m["id"] not in seen:
+                    seen.add(m["id"])
+                    media.append(m)
+        return ku.parse_akerbp(media)
+    one("Operatør: Aker BP", akerbp)
+
+    # Dokumenter uten dato (Equinor) får datoen da vi først så dem – bortsett fra
+    # ved første kjøring, så eksisterende dokumenter ikke ser «nye» ut.
+    known = {d["url"]: d.get("dato") for p in prev_projects for d in p["dokumenter"]}
+    first_run = not prev_projects
+    out = []
+    for p in prosjekter:
+        for d in p["dokumenter"]:
+            if not d.get("dato"):
+                d["dato"] = known.get(d["url"]) or (None if first_run or d["url"] in known else today)
+        datoer = [d["dato"] for d in p["dokumenter"] if d.get("dato")]
+        publisert = max(datoer) if datoer else None
+        t = tema_for(p["prosjekt"], p["beskrivelse"], " ".join(d["tittel"] for d in p["dokumenter"]))
+        if "Olje og gass" not in t and not set(t) & {"Hydrogen og CCS", "Havvind", "Vindkraft"}:
+            t = ["Olje og gass", *t]
+        status_ = p["status"]
+        if p.get("frist"):
+            status_ = "åpen" if p["frist"] >= today else "avsluttet"
+        out.append({
+            "id": f"{p['operator']}:{p['prosjekt']}", "kilde": "operator", "avsender": p["operator"],
+            "tittel": f"Konsekvensutredning: {p['prosjekt']}", "beskrivelse": p["beskrivelse"],
+            "publisert": publisert, "frist": p.get("frist"), "status": status_, "saksnr": None,
+            "emner": [], "energi": True, "tema": t, "url": p["url"],
+            "dokumenter": sorted(p["dokumenter"], key=lambda d: d.get("dato") or "", reverse=True)[:12],
+            "_prosjekt": p,
+        })
+    return out, status
+
+
+# --------------------------------------------------------------------------
+# Stortinget: aktuelt-saker og stortingsvedtak (RSS)
+# --------------------------------------------------------------------------
+_ST_AKTUELT_RE = re.compile(r"energi|kraft|strøm|olje|gass|petroleum|klima|havvind|hydrogen|energi- og miljøkomit|"
+                            r"^uke \d+ på stortinget", re.I)
+
+
+def fetch_st_aktuelt() -> list[dict]:
+    out = []
+    for it in parse_rss(get(f"{ST_RSS}/Aktuelt-saker/")):
+        if _ST_AKTUELT_RE.search(it["title"]) or re.search(r"energi- og miljøkomit", it["description"] or "", re.I):
+            out.append({"tittel": it["title"], "url": it["link"], "dato": it["date"], "beskrivelse": it["description"],
+                        "kategori": "stortinget"})
+    return out
+
+
+def fetch_vedtak() -> dict[int, dict]:
+    """Stortingsvedtak per sak-id (lenke til vedtaket og dato)."""
+    out = {}
+    for it in parse_rss(get(f"{ST_RSS}/Stortingsvedtak/")):
+        m = re.search(r"[?&]p=(\d+)", it["link"] or "")
+        if m:
+            out[int(m.group(1))] = {"url": it["link"], "dato": it["date"]}
+    return out
+
+
+# --------------------------------------------------------------------------
 # Avledede lister: kalender og aktivitet
 # --------------------------------------------------------------------------
 def build_kalender(saker, horinger, dagsorden, nyheter, eksterne=()) -> list[dict]:
@@ -704,12 +806,15 @@ def build_aktivitet(saker, sporsmal, nyheter, eksterne=()) -> list[dict]:
         if q["besvart"]:
             akt.append({**base, "dato": q["besvart"], "type": "svar", "label": f"{navn} besvart", "meta": f"Besvart av {q['besvart_av_tittel'] or q['besvart_av'] or ''}".strip()})
     for n in nyheter:
+        if n["kategori"] == "stortinget" and n["dato"] and not re.match(r"Uke \d+ på Stortinget", n["tittel"]):
+            akt.append({"dato": n["dato"], "type": "stortinget", "label": "Stortinget", "tittel": n["tittel"], "url": n["url"],
+                        "meta": (n.get("beskrivelse") or "")[:200] or None, "energi": True, "tema": []})
         if n["kategori"] == "nyhet" and n["dato"]:
             akt.append({"dato": n["dato"], "type": "regjeringen", "label": "Regjeringen", "tittel": n["tittel"], "url": n["url"], "meta": n["beskrivelse"][:200], "energi": True, "tema": []})
     for h in eksterne:
         if h.get("publisert"):
             frist = f"Frist {dt.date.fromisoformat(h['frist']).strftime('%d.%m.%Y')}" if h.get("frist") else None
-            akt.append({"dato": h["publisert"], "type": "ekstern_horing", "label": f"Ny høring – {h['avsender']}", "tittel": h["tittel"],
+            akt.append({"dato": h["publisert"], "type": "ekstern_horing", "label": f"{'Ny KU-høring' if h['kilde'] == 'operator' else 'Ny høring'} – {h['avsender']}", "tittel": h["tittel"],
                         "url": h["url"], "meta": " · ".join(x for x in (frist, h.get("saksnr")) if x) or None, "energi": h["energi"], "tema": h["tema"]})
     akt = [a for a in akt if a["dato"][:10] <= today]
     akt.sort(key=lambda a: a["dato"], reverse=True)
@@ -788,7 +893,22 @@ def main() -> int:
                 [h for h in prev_ext if h["kilde"] == "regjeringen"])
     mdir_h = run("Miljødirektoratet: høringer", lambda: fetch_mdir_horinger(prev_ext),
                  [h for h in prev_ext if h["kilde"] == "miljodirektoratet"])
-    eksterne = sorted(reg_h + mdir_h, key=lambda h: h.get("publisert") or "", reverse=True)
+    op_ku, op_status = fetch_operator_ku(prev_ext)
+    kilder.update(op_status)
+    for k, v in op_status.items():
+        print(f"{'✓' if v['ok'] else '✗'} {k}: {v.get('antall', v.get('feil'))}")
+    eksterne = sorted(reg_h + mdir_h + op_ku, key=lambda h: h.get("publisert") or "", reverse=True)
+    st_aktuelt = run("Stortinget RSS: aktuelt", fetch_st_aktuelt, [n for n in prev.get("nyheter", []) if n.get("kategori") == "stortinget"])
+    nyheter = sorted(nyheter + st_aktuelt, key=lambda n: n.get("dato") or "", reverse=True)
+    vedtak = run("Stortinget RSS: stortingsvedtak", fetch_vedtak, {})
+    for s_ in saker:
+        v = vedtak.get(s_["id"])
+        if v:
+            s_["vedtak_url"], s_["vedtak_dato"] = v["url"], v["dato"]
+        elif "vedtak_url" not in s_:
+            old_s = next((x for x in prev.get("saker", []) if x["id"] == s_["id"] and x.get("vedtak_url")), None)
+            if old_s:
+                s_["vedtak_url"], s_["vedtak_dato"] = old_s["vedtak_url"], old_s.get("vedtak_dato")
 
     if not saker and not spm:
         print("Ingen data – avbryter uten å skrive.", file=sys.stderr)
@@ -808,16 +928,59 @@ def main() -> int:
         "sporsmal": spm,
         "horinger": horinger,
         "dagsorden": dagsorden,
-        "nyheter": nyheter[:120],
+        "nyheter": nyheter[:160],
         "eksterne_horinger": eksterne,
         "kalender": build_kalender(saker, horinger, dagsorden, nyheter, eksterne),
         "aktivitet": build_aktivitet(saker, spm, nyheter, eksterne),
     }
+    pers_changed = False
+    # Profilkort: indeks + én fil per person (lastes først når et navn klikkes)
+    if RAW["saker"] and RAW["sporsmal"]:
+        def les(path, default):
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return default
+        bio_cache = les(BIO_CACHE, {})
+        old_bios = {}
+        if PERS_DIR.exists():
+            for f in PERS_DIR.glob("*.json"):
+                d = les(f, {})
+                if d.get("id") and d.get("bio"):
+                    old_bios[d["id"]] = d["bio"]
+        res = run("Stortinget API: representanter og biografier", lambda: P.build(
+            api, msdate, clean, RAW["saker"], RAW["sporsmal"], {x["id"] for x in saker if x["energi"]},
+            {q["id"] for q in spm if q["energiminister"] or set(q["tema"]) & ENERGI_TEMA}, bio_cache, old_bios,
+            log=lambda m: print(m, file=sys.stderr)), None)
+        if res:
+            personer, bio_cache = res
+            kilder["Stortinget API: representanter og biografier"]["antall"] = len(personer)
+            BIO_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            BIO_CACHE.write_text(json.dumps(bio_cache, ensure_ascii=False), encoding="utf-8")
+            PERS_DIR.mkdir(parents=True, exist_ok=True)
+            wanted = set()
+            for p in personer.values():
+                f = PERS_DIR / f"{P.slug(p['id'])}.json"
+                wanted.add(f.name)
+                txt = json.dumps(p, ensure_ascii=False, separators=(",", ":"))
+                if not f.exists() or f.read_text(encoding="utf-8") != txt:
+                    f.write_text(txt, encoding="utf-8")
+                    pers_changed = True
+            for f in PERS_DIR.glob("*.json"):
+                if f.name not in wanted:
+                    f.unlink()
+                    pers_changed = True
+            idx = json.dumps({"personer": sorted((P.index_entry(p) for p in personer.values()), key=lambda e: e["navn"])},
+                             ensure_ascii=False, separators=(",", ":"))
+            if not OUT_PERSONER.exists() or OUT_PERSONER.read_text(encoding="utf-8") != idx:
+                OUT_PERSONER.write_text(idx, encoding="utf-8")
+                pers_changed = True
+            print(f"Profilkort: {len(personer)} personer ({'endret' if pers_changed else 'uendret'})")
     # «endret» flyttes bare når selve innholdet endrer seg, slik at workflowen
     # kan la være å committe når ingenting nytt har skjedd.
     sig = lambda d: hashlib.sha256(json.dumps({k: v for k, v in d.items() if k not in ("generert", "endret", "kilder")},  # noqa: E731
                                               ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-    changed = not prev or sig(prev) != sig(data)
+    changed = not prev or sig(prev) != sig(data) or pers_changed
     data["endret"] = generated if changed else prev.get("endret", generated)
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:

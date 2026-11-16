@@ -10,6 +10,10 @@ Publiseres på GitHub Pages under `/energi/`
 ```
 energi/
   fetch.py             henter og bearbeider data (bare standardbiblioteket)
+  ku.py                parsere for operatørenes konsekvensutredninger
+  personer.py          profilkort for representanter
+  site/data/personer.json      indeks over representanter (lastes ved oppstart)
+  site/data/personer/<id>.json  ett profilkort per person (lastes ved klikk)
   site/index.html      nettsiden (vanlig HTML/CSS/JS, ingen byggesteg)
   site/app.js          visninger, filtre, søk, ruting (#/saker/123, #/horinger osv.)
   site/style.css       lyst og mørkt tema, mobil med bunnmeny
@@ -31,6 +35,11 @@ energi/
 | regjeringen.no RSS (`owner=750`) | nyheter og statsrådens program fra Energidepartementet | |
 | regjeringen.no RSS (`documentType=dokumenter`, med og uten `owner=750`) | høringer fra Energidepartementet, og høringer om petroleum fra alle departementer | se under |
 | `miljodirektoratet.no/hearingslistpage/gethearings` | Miljødirektoratets høringer med frist, saksnummer og emne | aktive høringer og nylig avsluttede innen olje og gass og klima |
+| Equinor: `equinor.com/no/baerekraft/konsekvensutredninger` | KU-dokumenter per prosjekt (høringsbrev, programforslag, KU) | data leses fra den innebygde Next.js-strømmen; norske prosjekter |
+| Vår Energi: `varenergi.no/no/var-virksomhet/konsekvensutredninger/` | pågående og gjennomførte KU-høringer med frist og datoer | HTML |
+| Aker BP: `akerbp.com/wp-json/wp/v2/media` | KU-dokumenter med publiseringsdato (siste 18 mnd.) | WordPress-API |
+| Stortingets RSS «Aktuelt-saker» | aktuelt fra Stortinget om energi, og «Uke NN på Stortinget» | vises under Nyheter |
+| Stortingets RSS «Stortingsvedtak» | lenke til vedtaket i saker vi følger | |
 
 ### Høringer fra regjeringen.no
 
@@ -52,6 +61,38 @@ dit.
 Høringer med emnet «Olje og gass» eller med energitema i tittelen regnes som
 energi. Høringer med emnet «Klima» tas med, men vises bare når bryteren «Ta med
 klima og miljø» er på.
+
+### Konsekvensutredninger fra operatørene (`ku.py`)
+
+KU-høringer for PUD/PAD og avslutningsplaner vises som egne kort under
+Høringer → «Operatører (KU)», med de nyeste dokumentene og eventuell frist.
+
+- **Vår Energi** oppgir frist og dato for hvert dokument.
+- **Aker BP** har dato per dokument fra mediebiblioteket. Dokumentene grupperes
+  per prosjekt ut fra tittelen (`akerbp_prosjekt`).
+- **Equinor** har ikke datoer på siden. Dato hentes fra filnavnet når den står
+  der, og ellers settes den til dagen dokumentet ble oppdaget første gang.
+  Første kjøring får ingen slike datoer, slik at eldre dokumenter ikke ser nye
+  ut.
+
+Hver operatør hentes for seg. Hvis én feiler, beholdes forrige data for den.
+
+### Profilkort for representanter (`personer.py`)
+
+Når du klikker på et navn, åpnes et profilkort (`#/person/<id>`). Kortet viser:
+
+- Grunndata: parti, fylke, alder, e-post og faste komiteer, fra
+  `dagensrepresentanter`.
+- Bilde, fra `personbilde`. Det hentes direkte fra Stortinget.
+- Kodet biografi: perioder, verv på Stortinget, utdanning, arbeidserfaring,
+  verv utenfor Stortinget og litteratur, fra `kodetbiografi`.
+- Alle saker personen er forslagstiller eller saksordfører på, og alle
+  spørsmål personen har stilt i inneværende og forrige sesjon, uansett tema.
+  Energisakene er merket.
+
+Biografiene caches i `energi/.cache/` (`actions/cache` i CI, ikke i git) og
+fornyes etter 7 dager, høyst 60 per kjøring (`BIO_MAX`). Personfilene skrives
+bare når innholdet endres.
 
 ### Hva regnes som en energisak?
 

@@ -29,7 +29,7 @@
     hear: '<svg viewBox="0 0 24 24"><path d="M7 4h10a2 2 0 0 1 2 2v14l-4-2.5-3 2-3-2L5 20V6a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 9h6M9 12.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>',
   };
-  const FEED_IC = { ny_sak: ["doc", "blue"], innstilling: ["gavel", "violet"], vedtak: ["check", "green"], spm: ["ask", "amber"], svar: ["reply", "green"], regjeringen: ["gov", ""], ekstern_horing: ["hear", "violet"] };
+  const FEED_IC = { ny_sak: ["doc", "blue"], innstilling: ["gavel", "violet"], vedtak: ["check", "green"], spm: ["ask", "amber"], svar: ["reply", "green"], regjeringen: ["gov", ""], ekstern_horing: ["hear", "violet"], stortinget: ["gov", "blue"] };
 
   // ---------- Hjelpere ----------
   const $ = (s, el = document) => el.querySelector(s);
@@ -61,7 +61,13 @@
     const p = PARTI[id] || [id, "#8892a0"];
     return `<span class="party" title="${esc(p[0])}" style="--pc:${p[1]}"><i></i>${esc(id)}</span>`;
   };
-  const who = (p) => (p && p.navn ? `${esc(p.navn)} ${party(p.parti)}` : "");
+  const pidFor = (p) => p?.id || (p?.navn && D?.personByName?.get(norm(p.navn))) || null;
+  const pname = (p) => {
+    const id = pidFor(p);
+    return id ? `<span class="pers" role="link" tabindex="0" data-pid="${esc(id)}" title="Vis profil">${esc(p.navn)}</span>` : esc(p.navn);
+  };
+  const who = (p) => (p && p.navn ? `${pname(p)} ${party(p.parti)}` : "");
+  const slug = (pid) => [...pid].map((c) => (/[A-Za-z0-9]/.test(c) ? c : "_" + c.codePointAt(0).toString(16))).join("");
   const pill = (txt, cls = "", dot = false) => `<span class="pill ${cls}${dot ? " dotted" : ""}">${esc(txt)}</span>`;
   const store = {
     get(k, d) { try { const v = localStorage.getItem("energi:" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -335,16 +341,16 @@
   function viewRegjeringen() {
     const u = ui.reg;
     main.innerHTML = `
-      <div class="page-head"><div><h1>Regjeringen</h1><p>Nyheter, pressemeldinger og statsrådens program fra Energidepartementet.</p></div></div>
+      <div class="page-head"><div><h1>Regjeringen</h1><p>Nyheter og statsrådens program fra Energidepartementet, og aktuelt fra Stortinget.</p></div></div>
       <div class="toolbar">${searchBox("rq", u.q, "Søk i nyheter …")}<div id="rSeg"></div></div>
       <section class="panel flush"><ul class="feed" id="rList"></ul></section>`;
     const render = () => {
       const q = norm(u.q).trim();
       const base = D.nyheter.filter((n) => !q || norm(n.tittel + " " + n.beskrivelse).includes(q));
       const c = (k) => base.filter((n) => !k || n.kategori === k).length;
-      $("#rSeg").innerHTML = seg("rS", [["nyhet", "Nyheter", c("nyhet")], ["kalender", "Statsrådens program", c("kalender")], ["", "Alt", c("")]], u.kat);
+      $("#rSeg").innerHTML = seg("rS", [["nyhet", "Energidepartementet", c("nyhet")], ["stortinget", "Stortinget", c("stortinget")], ["kalender", "Statsrådens program", c("kalender")], ["", "Alt", c("")]], u.kat);
       const list = base.filter((n) => !u.kat || n.kategori === u.kat);
-      $("#rList").innerHTML = list.length ? list.map((n) => `<li class="clickable" data-href="${esc(n.url)}" data-ext="1"><span class="ic ${n.kategori === "kalender" ? "green" : ""}">${n.kategori === "kalender" ? I.clock : I.gov}</span><div><div class="lbl"><b>${n.kategori === "kalender" ? "Program" : "Nyhet"}</b><span>${esc(fmt(n.dato, true))}${fmtTime(n.dato) ? ` kl. ${fmtTime(n.dato)}` : ""}</span></div><a class="t" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.tittel)}</a>${n.beskrivelse ? `<div class="m">${esc(n.beskrivelse.slice(0, 240))}</div>` : ""}</div></li>`).join("") : `<li>${empty("Ingen treff")}</li>`;
+      $("#rList").innerHTML = list.length ? list.map((n) => `<li class="clickable" data-href="${esc(n.url)}" data-ext="1"><span class="ic ${n.kategori === "kalender" ? "green" : n.kategori === "stortinget" ? "blue" : ""}">${n.kategori === "kalender" ? I.clock : I.gov}</span><div><div class="lbl"><b>${n.kategori === "kalender" ? "Program" : n.kategori === "stortinget" ? "Stortinget" : "Energidepartementet"}</b><span>${esc(fmt(n.dato, true))}${fmtTime(n.dato) ? ` kl. ${fmtTime(n.dato)}` : ""}</span></div><a class="t" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.tittel)}</a>${n.beskrivelse ? `<div class="m">${esc(n.beskrivelse.slice(0, 240))}</div>` : ""}</div></li>`).join("") : `<li>${empty("Ingen treff")}</li>`;
       $("#rS").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { u.kat = b.dataset.v; save(); render(); } });
     };
     $("#rq").addEventListener("input", debounce((e) => { u.q = e.target.value; save(); render(); }));
@@ -352,7 +358,7 @@
   }
 
   // ---------- Høringer ----------
-  const KILDE = { stortinget: ["Stortinget", "blue"], regjeringen: ["Regjeringen", "violet"], miljodirektoratet: ["Miljødirektoratet", "green"] };
+  const KILDE = { stortinget: ["Stortinget", "blue"], regjeringen: ["Regjeringen", "violet"], miljodirektoratet: ["Miljødirektoratet", "green"], operator: ["Operatør", "amber"] };
   const horScope = (h) => ui.scope === "alle" || h.energi;
   const aktuell = (h) => (h.frist ? h.frist >= TODAY : !!h.publisert && daysBetween(h.publisert, TODAY) <= 90);
   function buildHoringer() {
@@ -378,6 +384,15 @@
       fr = dleft < 0 ? `<span>Frist var ${esc(fmt(h.frist, true))}</span>`
         : `${pill(`Frist ${fmt(h.frist)}${fmtTime(h.fristTid) ? " kl. " + fmtTime(h.fristTid) : ""}`, dleft <= 7 ? "amber" : "green", true)} <span>${esc(rel(h.frist))}</span>`;
     } else fr = `<span>Sendt ut ${esc(fmt(h.publisert, true))} · frist står på høringssiden</span>`;
+    if (h.dokumenter?.length) {
+      return `<div class="card ku">
+      <div class="row1">${pill("KU-høring", k[1])}<span class="ref">${esc(h.avsender)}</span>${h.status === "åpen" ? pill("Pågår", "green", true) : ""}</div>
+      <h3><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.tittel.replace(/^Konsekvensutredning: /, ""))}</a></h3>
+      ${h.beskrivelse ? `<p class="q" style="-webkit-line-clamp:2;margin-top:6px;font-size:14px;color:var(--ink-2)">${esc(h.beskrivelse)}</p>` : ""}
+      <ul class="docs">${h.dokumenter.slice(0, 4).map((d) => `<li><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.tittel)}</a>${d.dato ? `<time>${esc(fmt(d.dato, true))}</time>` : ""}</li>`).join("")}${h.dokumenter.length > 4 ? `<li class="more-docs"><a href="${esc(h.url)}" target="_blank" rel="noopener">${h.dokumenter.length - 4} dokumenter til hos ${esc(h.avsender)}</a></li>` : ""}</ul>
+      <div class="foot-row"><span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${h.frist ? fr : h.publisert ? `<span>Sist publisert ${esc(fmt(h.publisert, true))}</span>` : "<span>Dato ikke oppgitt</span>"}</span><span style="display:flex;gap:5px;flex-wrap:wrap">${(h.tema || []).slice(0, 3).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</span></div>
+    </div>`;
+    }
     return `<a class="card" href="${esc(h.href)}" ${h.ext ? 'target="_blank" rel="noopener"' : ""}>
       <div class="row1">${pill(k[0], k[1])}${h.avsender !== k[0] ? `<span class="ref">${esc(h.avsender)}</span>` : ""}${h.saksnr ? `<span>${esc(h.saksnr)}</span>` : ""}</div>
       <h3>${esc(h.tittel)}</h3>
@@ -388,7 +403,7 @@
   function viewHoringer() {
     const u = ui.hor;
     main.innerHTML = `
-      <div class="page-head"><div><h1>Høringer</h1><p>Høringer i Stortinget, fra Energidepartementet, om petroleum fra andre departementer og fra Miljødirektoratet.</p></div>${scopeSwitch()}</div>
+      <div class="page-head"><div><h1>Høringer</h1><p>Høringer i Stortinget, fra Energidepartementet, om petroleum fra andre departementer, fra Miljødirektoratet og operatørenes konsekvensutredninger (Equinor, Aker BP, Vår Energi).</p></div>${scopeSwitch()}</div>
       <div class="toolbar">${searchBox("hq", u.q, "Søk i høringer, f.eks. Equinor, vindkraft …")}<div id="hVis"></div></div>
       <div id="hSeg" style="margin-bottom:12px"></div>
       <div class="result-meta" id="hMeta"></div>
@@ -398,7 +413,7 @@
       const base = D.hor.filter((h) => horScope(h) && (u.vis === "alle" || aktuell(h)) && (!q || norm(`${h.tittel} ${h.beskrivelse} ${h.avsender} ${h.saksnr} ${(h.tema || []).join(" ")}`).includes(q)));
       const n = (k) => base.filter((h) => !k || h.kilde === k).length;
       $("#hVis").innerHTML = seg("hV", [["aktuelle", "Aktuelle"], ["alle", "Alle"]], u.vis);
-      $("#hSeg").innerHTML = seg("hK", [["", "Alle kilder", n("")], ["stortinget", "Stortinget", n("stortinget")], ["regjeringen", "Regjeringen", n("regjeringen")], ["miljodirektoratet", "Miljødirektoratet", n("miljodirektoratet")]], u.kilde);
+      $("#hSeg").innerHTML = seg("hK", [["", "Alle kilder", n("")], ["stortinget", "Stortinget", n("stortinget")], ["regjeringen", "Regjeringen", n("regjeringen")], ["miljodirektoratet", "Miljødirektoratet", n("miljodirektoratet")], ["operator", "Operatører (KU)", n("operator")]], u.kilde);
       const list = base.filter((h) => !u.kilde || h.kilde === u.kilde);
       if (u.vis === "aktuelle") list.sort((a, b) => (a.frist && b.frist ? a.frist.localeCompare(b.frist) : a.frist ? -1 : b.frist ? 1 : (b.publisert || "").localeCompare(a.publisert || "")));
       else list.sort((a, b) => (b.publisert || b.frist || "").localeCompare(a.publisert || a.frist || ""));
@@ -430,7 +445,7 @@
   function closeSheet(fromRoute) {
     if (sheet.hidden) return;
     sheet.hidden = true; backdrop.hidden = true; document.body.style.overflow = "";
-    if (!fromRoute) location.hash = `#/${route().tab}`;
+    if (!fromRoute) location.hash = `#/${curTab || "oversikt"}`;
     lastFocus?.focus?.({ preventScroll: true });
   }
   $("#sheetClose").addEventListener("click", () => closeSheet());
@@ -460,6 +475,7 @@
       ${s.kortvedtak ? `<h4>Vedtak</h4><p class="quote">${esc(s.kortvedtak)}</p>` : s.vedtakstekst ? `<h4>Vedtak</h4><p class="quote">${esc(s.vedtakstekst)}</p>` : ""}
       ${tl.length ? `<h4>Saksgang</h4><ol class="tl">${tl.map((h) => `<li class="${h.fut ? "future" : ""}"><time>${esc(fmt(h.dato, true))}</time>${esc(h.label)}</li>`).join("")}</ol>` : ""}
       ${hor.length ? `<h4>Høring</h4><div class="links">${hor.map((h) => `<a href="${esc(h.url)}" target="_blank" rel="noopener">${h.skriftlig ? "Skriftlig høring" : "Høring"}${h.innspillsfrist ? ` – frist ${esc(fmt(h.innspillsfrist, true))}` : ""}</a>`).join("")}</div>` : ""}
+      ${s.vedtak_url ? `<h4>Vedtak</h4><div class="links"><a href="${esc(s.vedtak_url)}" target="_blank" rel="noopener">Stortingsvedtaket${s.vedtak_dato ? ` – ${esc(fmt(s.vedtak_dato, true))}` : ""}</a></div>` : ""}
       ${s.publikasjoner?.length ? `<h4>Dokumenter</h4><div class="links">${s.publikasjoner.slice(0, 12).map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.tekst)}</a>`).join("")}</div>` : ""}
       <a class="cta" href="${esc(s.url)}" target="_blank" rel="noopener">Åpne saken på stortinget.no ↗</a>`;
   }
@@ -483,16 +499,116 @@
       <a class="cta" href="${esc(q.url)}" target="_blank" rel="noopener">${q.status === "besvart" ? "Les svaret på stortinget.no" : "Se spørsmålet på stortinget.no"} ↗</a>`;
   }
 
+  // ---------- Profilkort ----------
+  const PERS_CACHE = new Map();
+  const ROLLE = { forslag: "Forslagstiller", ordforer: "Saksordfører" };
+  const ST = "https://www.stortinget.no";
+  const SPM_URL = { skriftlig: "/no/Saker-og-publikasjoner/Sporsmal/Skriftlige-sporsmal-og-svar/Skriftlig-sporsmal/?qnid=", sporretime: "/no/Saker-og-publikasjoner/Sporsmal/Sporretimesporsmal/et-sporretimesporsmal/?qnid=", muntlig: "/no/Saker-og-publikasjoner/Sporsmal/Sporretimesporsmal/et-sporretimesporsmal/?qnid=", interpellasjon: "/no/Saker-og-publikasjoner/Sporsmal/Interpellasjoner/Interpellasjon/?qnid=" };
+  const alder = (fodt) => { if (!fodt) return null; const f = toDate(fodt); let a = today.getFullYear() - f.getFullYear(); if (today < new Date(today.getFullYear(), f.getMonth(), f.getDate())) a--; return a; };
+  const aar = (r) => (r.fra || r.til ? `${r.fra || ""}–${r.til || ""}` : "");
+
+  function openPerson(pid) {
+    const meta = D.personer?.get(pid);
+    openSheet(`<div class="loading"><span class="spinner"></span>Henter profil …</div>`);
+    const file = meta?.fil || slug(pid);
+    const load = PERS_CACHE.get(pid) || fetch(`data/personer/${encodeURIComponent(file)}.json`, { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+    PERS_CACHE.set(pid, load);
+    load.then((p) => { if (route().tab === "person" && route().id === pid) { $("#sheetBody").innerHTML = personSheet(p); bindPerson(p); } })
+      .catch(() => { PERS_CACHE.delete(pid); $("#sheetBody").innerHTML = empty("Fant ikke profilen", "Personen er kanskje ikke i datagrunnlaget ennå."); });
+  }
+
+  function personSheet(p) {
+    const pc = PARTI[p.parti] || [p.parti_navn || p.parti || "", "#8892a0"];
+    const bio = p.bio || {};
+    const status = p.aktiv ? (p.vara ? "Vararepresentant (møtende)" : "Stortingsrepresentant") : "Ikke på Stortinget nå";
+    const a = alder(p.fodt);
+    const nE = p.saker.filter((x) => x.e).length, qE = p.sporsmal.filter((x) => x.e).length;
+    const qEm = p.sporsmal.filter((x) => /energiminister/i.test(x.til || "")).length;
+    const curP = (bio.perioder || []).map((x) => x.periode).sort().pop();
+    const verv = (bio.stortingsverv || []).filter((v) => v.periode === curP).sort((x, y) => (x.sort ?? 99) - (y.sort ?? 99));
+    const sec = (title, inner, open = true) => inner ? `<details class="psec" ${open ? "open" : ""}><summary>${esc(title)}</summary>${inner}</details>` : "";
+    const rows = (list, fn) => (list && list.length ? `<ul class="plist">${list.map(fn).join("")}</ul>` : "");
+    return `
+      <div class="phead">
+        <div class="pphoto" style="--pc:${pc[1]}"><img src="${esc(p.bilde)}" alt="" onerror="this.remove()"><span>${esc((p.fornavn || "?")[0])}${esc((p.etternavn || "")[0] || "")}</span></div>
+        <div class="pinfo">
+          <h2 id="sheetTitle">${esc(p.navn)}</h2>
+          <div class="pmeta"><span class="pill" style="background:color-mix(in srgb, ${pc[1]} 16%, transparent);color:var(--ink)"><i class="pdot" style="background:${pc[1]}"></i>${esc(p.parti_navn || pc[0])}</span>${p.fylke ? `<span>${esc(p.fylke)}</span>` : ""}</div>
+          <div class="pmeta muted">${esc(status)}${a !== null ? ` · ${a} år` : ""}${bio.ansiennitet?.aar ? ` · ${plural(bio.ansiennitet.aar, "år", "år")} på Stortinget` : ""}</div>
+        </div>
+      </div>
+      ${p.vara_for || p.fast_vara_for ? `<p class="lead" style="margin-top:10px">Vara for ${esc(p.vara_for || p.fast_vara_for)}</p>` : ""}
+      <div class="kpis pk">
+        <div class="kpi"><div class="v">${nE}<small>/${p.saker.length}</small></div><div class="k">energisaker / alle saker</div></div>
+        <div class="kpi"><div class="v">${qE}<small>/${p.sporsmal.length}</small></div><div class="k">energispørsmål / alle</div></div>
+        <div class="kpi"><div class="v">${qEm}</div><div class="k">til energiministeren</div></div>
+      </div>
+      <div class="pbtns">${p.epost ? `<a class="btn" href="mailto:${esc(p.epost)}">E-post</a>` : ""}<a class="btn" href="${esc(p.profil)}" target="_blank" rel="noopener">Profil på stortinget.no ↗</a></div>
+      ${p.komiteer?.length || verv.length ? `<h4>Komiteer og verv${curP ? ` ${esc(curP)}` : ""}</h4>${verv.length ? rows(verv, (v) => `<li><b>${esc(v.navn)}</b><span>${esc(v.verv || "")}${v.type ? ` · ${esc(v.type)}` : ""}</span></li>`) : rows(p.komiteer, (k) => `<li><b>${esc(k)}</b></li>`)}` : ""}
+      <h4>Saker med navnet på</h4>
+      <div class="toolbar" style="margin:0 0 8px">${seg("pSakSeg", [["e", "Energi", nE], ["a", "Alle", p.saker.length]], nE ? "e" : "a")}</div>
+      <div id="pSaker"></div>
+      <h4>Spørsmål stilt</h4>
+      <div class="toolbar" style="margin:0 0 8px">${seg("pSpmSeg", [["e", "Energi", qE], ["a", "Alle", p.sporsmal.length]], qE ? "e" : "a")}</div>
+      <div id="pSpm"></div>
+      <h4>Biografi</h4>
+      ${!p.bio ? `<p class="muted">Biografi er ikke hentet ennå.</p>` : ""}
+      ${sec("Perioder på Stortinget", rows([...(bio.perioder || [])].reverse(), (x) => `<li><b>${esc(x.periode)}</b><span>${esc(x.verv || "")} · ${esc(x.fylke || "")} · ${esc(x.parti || "")}</span></li>`), (bio.perioder || []).length <= 3)}
+      ${sec("Utdanning", rows(bio.utdanning, (x) => `<li><b>${esc(x.navn)}</b><span>${esc(aar(x))}${x.merknad ? ` · ${esc(x.merknad)}` : ""}</span></li>`), false)}
+      ${sec("Arbeidserfaring", rows(bio.yrke, (x) => `<li><b>${esc(x.navn)}</b><span>${esc(aar(x))}${x.merknad ? ` · ${esc(x.merknad)}` : ""}</span></li>`), false)}
+      ${sec("Verv utenfor Stortinget", rows(bio.verv, (x) => `<li><b>${esc([x.verv, x.organisasjon].filter(Boolean).join(", "))}</b><span>${esc([x.sted, aar(x)].filter(Boolean).join(" · "))}</span></li>`), false)}
+      ${sec("Tidligere verv på Stortinget", rows((bio.stortingsverv || []).filter((v) => v.periode !== curP), (v) => `<li><b>${esc(v.navn)}</b><span>${esc(v.verv || "")} · ${esc(v.periode || "")}</span></li>`), false)}
+      ${sec("Annet", rows(bio.annet, (x) => `<li><b>${esc(x.navn)}</b><span>${esc(aar(x))}</span></li>`), false)}
+      ${sec("Litteratur", rows(bio.litteratur, (x) => `<li>${esc(x)}</li>`), false)}
+      <p class="muted" style="margin-top:18px;font-size:12.5px">Kilde: Stortingets åpne data (representantdata og kodet biografi). Saker og spørsmål gjelder ${esc(D.sesjoner.join(" og "))}.</p>`;
+  }
+
+  function bindPerson(p) {
+    const lim = { s: 25, q: 25 };
+    const sakRow = (x) => {
+      const own = D.sakById.has(x.id);
+      const href = own ? `#/saker/${x.id}` : `${ST}/no/Saker-og-publikasjoner/Saker/Sak/?p=${x.id}`;
+      return `<a class="pitem" href="${href}" ${own ? "" : 'target="_blank" rel="noopener"'}><div class="row1">${pill(ROLLE[x.r], x.r === "ordforer" ? "violet" : "blue")}${x.e ? pill("Energi", "amber") : ""}<span class="ref">${esc(x.h || "")}</span></div><div class="pt">${esc(x.t)}</div><div class="pm">${esc([x.st, x.k, x.s].filter(Boolean).join(" · "))}</div></a>`;
+    };
+    const spmRow = (x) => {
+      const own = D.spmById.has(x.id);
+      const href = own ? `#/sporsmal/${x.id}` : ST + SPM_URL[x.ty] + x.id;
+      return `<a class="pitem" href="${href}" ${own ? "" : 'target="_blank" rel="noopener"'}><div class="row1"><span class="tag">${esc(SPM_KORT[x.ty])}</span>${x.e ? pill("Energi", "amber") : ""}<span>${esc(fmt(x.d, true))}</span>${x.b ? pill("Besvart", "green", true) : pill("Venter", "amber", true)}</div><div class="pt clamp">${esc(x.t)}</div><div class="pm">Til ${esc(x.til || "")}</div></a>`;
+    };
+    const render = (key, segId, boxId, list, rowFn) => {
+      const mode = $(`#${segId} [aria-pressed="true"]`)?.dataset.v || "a";
+      const L = mode === "e" ? list.filter((x) => x.e) : list;
+      $(`#${boxId}`).innerHTML = L.length ? `<div class="plist2">${L.slice(0, lim[key]).map(rowFn).join("")}</div>${L.length > lim[key] ? `<button class="btn more-btn" data-more="${key}" type="button">Vis alle ${L.length}</button>` : ""}` : `<p class="muted">Ingen.</p>`;
+    };
+    const both = () => { render("s", "pSakSeg", "pSaker", p.saker, sakRow); render("q", "pSpmSeg", "pSpm", p.sporsmal, spmRow); };
+    for (const id of ["pSakSeg", "pSpmSeg"]) {
+      $(`#${id}`).addEventListener("click", (e) => {
+        const b = e.target.closest("button"); if (!b) return;
+        $(`#${id}`).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+        lim.s = lim.q = 25; both();
+      });
+    }
+    $("#sheetBody").addEventListener("click", (e) => { const m = e.target.closest("[data-more]"); if (m) { lim[m.dataset.more] = 1e4; both(); } });
+    both();
+  }
+
   // ---------- Ruting ----------
   const TABS = { oversikt: viewOversikt, saker: viewSaker, sporsmal: viewSporsmal, horinger: viewHoringer, kalender: viewKalender, nyheter: viewRegjeringen };
   const route = () => {
     let [, tab, id] = (location.hash || "#/oversikt").split("/");
     if (tab === "regjeringen") tab = "nyheter";
+    if (tab === "person" && id) return { tab: "person", id: decodeURIComponent(id) };
     return { tab: TABS[tab] ? tab : "oversikt", id };
   };
   let curTab = null;
   function go() {
     const r = route();
+    if (r.tab === "person") {
+      if (!curTab) { curTab = "oversikt"; TABS.oversikt(); }
+      document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === curTab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+      openPerson(r.id);
+      return;
+    }
     document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === r.tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
     if (r.tab !== curTab || !r.id) {
       if (r.tab !== curTab) window.scrollTo(0, 0);
@@ -509,6 +625,15 @@
   window.addEventListener("hashchange", go);
 
   // Klikk på hele feed-raden
+  const goPerson = (el) => { location.hash = `#/person/${encodeURIComponent(el.dataset.pid)}`; };
+  document.addEventListener("click", (e) => {
+    const pe = e.target.closest("[data-pid]");
+    if (pe) { e.preventDefault(); e.stopPropagation(); goPerson(pe); }
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    const pe = e.target.closest?.("[data-pid]");
+    if (pe && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); goPerson(pe); }
+  });
   document.addEventListener("click", (e) => {
     const li = e.target.closest("li.clickable");
     if (!li || e.target.closest("a")) return;
@@ -519,15 +644,19 @@
   function footer() {
     const k = Object.entries(D.kilder);
     $("#foot").innerHTML = `<details><summary>Om siden og datakildene</summary>
-      <p>Data hentes automatisk fra <a href="https://data.stortinget.no" target="_blank" rel="noopener">Stortingets åpne data</a>, Stortingets RSS-feeder (ubesvarte spørsmål og hovedtema Energi) , <a href="https://www.regjeringen.no/no/dokument/hoyringar/id1763/" target="_blank" rel="noopener">regjeringen.no</a> (nyheter og høringer fra Energidepartementet, og høringer om petroleum fra alle departementer) og <a href="https://www.miljodirektoratet.no/hoeringer/" target="_blank" rel="noopener">Miljødirektoratets høringer</a> (olje og gass, energi og klima). Høringsfrister fra regjeringen.no står bare på selve høringssiden. Saker regnes som energisaker når de er merket med energitema av Stortinget, eller tittelen inneholder energirelaterte ord. Sist oppdatert ${esc(fmt(D.generert, true))} kl. ${esc(fmtTime(D.generert))}.</p>
+      <p>Data hentes automatisk fra <a href="https://data.stortinget.no" target="_blank" rel="noopener">Stortingets åpne data</a>, Stortingets RSS-feeder (ubesvarte spørsmål og hovedtema Energi) , <a href="https://www.regjeringen.no/no/dokument/hoyringar/id1763/" target="_blank" rel="noopener">regjeringen.no</a> (nyheter og høringer fra Energidepartementet, og høringer om petroleum fra alle departementer), <a href="https://www.miljodirektoratet.no/hoeringer/" target="_blank" rel="noopener">Miljødirektoratets høringer</a> (olje og gass, energi og klima) og konsekvensutredninger fra <a href="https://www.equinor.com/no/baerekraft/konsekvensutredninger" target="_blank" rel="noopener">Equinor</a>, <a href="https://akerbp.com/var-virksomhet/" target="_blank" rel="noopener">Aker BP</a> og <a href="https://varenergi.no/no/var-virksomhet/konsekvensutredninger/" target="_blank" rel="noopener">Vår Energi</a>. Høringsfrister fra regjeringen.no står bare på selve høringssiden. Saker regnes som energisaker når de er merket med energitema av Stortinget, eller tittelen inneholder energirelaterte ord. Sist oppdatert ${esc(fmt(D.generert, true))} kl. ${esc(fmtTime(D.generert))}.</p>
       <ul>${k.map(([n, v]) => `<li><span class="${v.ok ? "ok" : "err"}">${v.ok ? "✓" : "✗"}</span> ${esc(n)}${v.ok ? (v.antall !== null ? ` – ${v.antall}` : "") : ` – feil: ${esc(v.feil)}`}</li>`).join("")}</ul>
       <p>Abonner på nye hendelser med <a href="feed.xml">RSS-feeden</a>.</p></details>`;
   }
 
+  const personIdx = fetch("data/personer.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : { personer: [] })).catch(() => ({ personer: [] }));
   fetch("data/energi.json", { cache: "no-cache" })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then((d) => {
+    .then(async (d) => {
       D = d;
+      const pi = await personIdx;
+      D.personer = new Map(pi.personer.map((p) => [p.id, p]));
+      D.personByName = new Map(pi.personer.map((p) => [norm(p.navn), p.id]));
       D.sakById = new Map(d.saker.map((s) => [s.id, s]));
       D.spmById = new Map(d.sporsmal.map((q) => [q.id, q]));
       D.hor = buildHoringer();
