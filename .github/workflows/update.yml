@@ -91,10 +91,17 @@ jobs:
           git push --force-with-lease=refs/heads/inbox:${{ steps.inbox.outputs.sha }} origin "$commit:refs/heads/inbox" \
             || echo "::warning::Inbox endret seg under kjøringen – tømmes neste gang."
 
+      # Energisiden (energi/) publiseres under /energi/ i samme Pages-nettsted.
+      - name: Sett sammen Pages-innhold
+        run: |
+          mkdir -p _site
+          cp -r site/. _site/
+          cp -r energi/site _site/energi
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
 
   deploy:
     needs: update

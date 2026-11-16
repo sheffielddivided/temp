@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Energi på Stortinget</title>
+<meta name="description" content="Følg energisaker på Stortinget: saker til behandling, spørsmål til energiministeren, høringer og frister.">
+<meta name="theme-color" content="#0f2a3d" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1620" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="alternate" type="application/rss+xml" title="Energi på Stortinget" href="feed.xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Hopp til innhold</a>
+
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#/oversikt" aria-label="Energi på Stortinget – til oversikten">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M18.5 4.5 8.5 18h6.2l-1.7 9.5L23.5 14h-6.3z" fill="var(--accent)"/></svg>
+      <span class="brand-text"><strong>Energi på Stortinget</strong><small id="updated">Laster …</small></span>
+    </a>
+    <div class="top-actions">
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Bytt mellom lyst og mørkt tema" title="Lyst/mørkt tema">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+      <a class="btn rss" href="feed.xml" title="Abonner med RSS">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <span>RSS</span>
+      </a>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="Seksjoner">
+    <a href="#/oversikt" data-tab="oversikt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zm0 7h6v-5H4zm10 0h6v-9h-6zm0-16v5h6V4z"/></svg><span>Oversikt</span></a>
+    <a href="#/saker" data-tab="saker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5M8 12h8M8 16h8M8 8h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Saker</span></a>
+    <a href="#/sporsmal" data-tab="sporsmal"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 8.2a2 2 0 1 1 2.8 1.8c-.6.3-.8.7-.8 1.3M12 13.6v.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Spørsmål</span></a>
+    <a href="#/kalender" data-tab="kalender"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Kalender</span></a>
+    <a href="#/regjeringen" data-tab="regjeringen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20.5h18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Regjeringen</span></a>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <div class="loading" id="loading"><span class="spinner"></span>Henter data …</div>
+</main>
+
+<div class="sheet-backdrop" id="backdrop" hidden></div>
+<aside class="sheet" id="sheet" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="sheet-grip" aria-hidden="true"></div>
+  <button class="icon-btn sheet-close" id="sheetClose" type="button" aria-label="Lukk">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+  </button>
+  <div class="sheet-body" id="sheetBody"></div>
+</aside>
+
+<footer class="foot" id="foot"></footer>
+
+<script src="app.js"></script>
+</body>
+</html>

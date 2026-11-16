@@ -1,0 +1,79 @@
+name: Oppdater Energi på Stortinget
+
+on:
+  schedule:
+    # Annenhver time 06–22 norsk tid (cron er UTC).
+    - cron: "17 5-21/2 * * *"
+  push:
+    branches: [main]
+    paths: ["energi/**", ".github/workflows/energi.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: energi
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+
+      - name: Test parsere
+        run: python -m pytest -q energi/tests -k "not data_og_feed"
+
+      - name: Hent data fra Stortinget og regjeringen.no
+        id: fetch
+        run: python energi/fetch.py
+
+      - name: Test generert data og RSS
+        run: python -m pytest -q energi/tests -k data_og_feed
+
+      # Commit bare når innholdet faktisk er endret (ikke bare tidsstempelet).
+      - name: Commit endringer
+        if: steps.fetch.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add energi/site/data energi/site/feed.xml
+          if git diff --cached --quiet; then
+            echo "Ingen endringer."
+          else
+            git commit -m "Oppdater energidata"
+            for i in 1 2 3; do git pull --rebase -q origin main && git push && break; sleep 5; done
+          fi
+
+      # Pages-artefaktet er felles for hele repoet: rig count-siden i roten og
+      # energisiden under /energi/. Begge workflowene bygger det likt.
+      - name: Sett sammen Pages-innhold
+        run: |
+          mkdir -p _site
+          cp -r site/. _site/
+          cp -r energi/site _site/energi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
