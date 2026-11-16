@@ -337,3 +337,35 @@ select.sel { height: 42px; border-radius: 11px; border: 1px solid var(--line); b
 .docs li a::before { content: "PDF"; font-size: 10px; font-weight: 700; color: var(--c-red); background: var(--c-red-bg); border-radius: 4px; padding: 1px 4px; margin-right: 7px; vertical-align: 1px; }
 .docs li.more-docs a::before { content: none; }
 .docs time { flex: none; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Profilkort ------------------------------------------------------- */
+.pers { cursor: pointer; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.pers:hover { color: var(--link); text-decoration-color: currentColor; }
+.phead { display: flex; gap: 16px; align-items: center; padding-right: 40px; margin-top: 6px; }
+.pphoto { position: relative; width: 84px; height: 104px; flex: none; border-radius: 14px; overflow: hidden; background: color-mix(in srgb, var(--pc) 22%, var(--surface-2)); display: grid; place-items: center; box-shadow: inset 0 -4px 0 var(--pc); }
+.pphoto img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
+.pphoto span { font-size: 28px; font-weight: 750; color: var(--ink-2); }
+.pinfo { min-width: 0; }
+.pinfo h2 { margin: 0 0 6px; padding: 0; }
+.pmeta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 14px; margin-top: 4px; }
+.pdot { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+.muted { color: var(--ink-3); }
+.kpis.pk { margin: 16px 0 12px; }
+.kpi small { font-size: 14px; color: var(--ink-3); font-weight: 600; }
+.pbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.plist li { display: grid; gap: 1px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.plist li:first-child { border-top: 0; }
+.plist li span { color: var(--ink-2); font-size: 13px; }
+.plist2 { display: grid; gap: 8px; }
+.pitem { display: block; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; color: var(--ink); }
+.pitem:hover { background: var(--surface-2); text-decoration: none; }
+.pitem .row1 { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-3); margin-bottom: 4px; }
+.pitem .pt { font-weight: 600; line-height: 1.38; }
+.pitem .pt.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-weight: 500; }
+.pitem .pm { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+.more-btn { margin-top: 10px; }
+.psec { border-top: 1px solid var(--line); padding: 4px 0; }
+.psec summary { cursor: pointer; font-weight: 650; padding: 8px 0; list-style-position: inside; }
+.psec[open] summary { color: var(--ink); }
+@media (max-width: 480px) { .pphoto { width: 70px; height: 88px; } .phead { gap: 12px; } }

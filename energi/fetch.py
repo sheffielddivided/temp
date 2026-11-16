@@ -32,11 +32,18 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ku  # noqa: E402
+import personer as P  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 SITE = ROOT / "site"
 OUT_JSON = SITE / "data" / "energi.json"
 OUT_RSS = SITE / "feed.xml"
+OUT_PERSONER = SITE / "data" / "personer.json"
+PERS_DIR = SITE / "data" / "personer"
+BIO_CACHE = ROOT / ".cache" / "biografier.json"  # ikke i git; actions/cache i CI
+
+# Rådata fra listene (alle tema) – brukes til profilkortene.
+RAW: dict[str, list] = {"saker": [], "sporsmal": []}
 
 API = "https://data.stortinget.no/eksport"
 ST = "https://www.stortinget.no"
@@ -150,7 +157,7 @@ def get(url: str, *, retries: int = 5, timeout: int = 40) -> bytes:
 
 
 def api(path: str, **params) -> dict:
-    q = "&".join(f"{k}={v}" for k, v in params.items())
+    q = urllib.parse.urlencode(params)
     return json.loads(get(f"{API}/{path}?{q}{'&' if q else ''}format=json"))
 
 
@@ -232,6 +239,7 @@ def fetch_saker(sesj: list[str], tema_ids: set[int]) -> list[dict]:
     raw: dict[int, tuple[str, dict]] = {}
     for s in sesj:
         for x in api("saker", sesjonid=s)["saker_liste"]:
+            RAW["saker"].append((s, x))
             kom = (x.get("komite") or {}).get("id")
             emner = {e["navn"].lower() for e in x.get("emne_liste") or []}
             t = tema_for(x.get("korttittel"))
@@ -382,6 +390,7 @@ def fetch_sporsmal(sesj: list[str]) -> list[dict]:
     for s in sesj:
         for ep in ("skriftligesporsmal", "sporretimesporsmal", "interpellasjoner"):
             for x in api(ep, sesjonid=s)["sporsmal_liste"]:
+                RAW["sporsmal"].append((s, x))
                 q = build_spm(x, s)
                 if q:
                     out[q["id"]] = q
@@ -924,11 +933,54 @@ def main() -> int:
         "kalender": build_kalender(saker, horinger, dagsorden, nyheter, eksterne),
         "aktivitet": build_aktivitet(saker, spm, nyheter, eksterne),
     }
+    pers_changed = False
+    # Profilkort: indeks + én fil per person (lastes først når et navn klikkes)
+    if RAW["saker"] and RAW["sporsmal"]:
+        def les(path, default):
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return default
+        bio_cache = les(BIO_CACHE, {})
+        old_bios = {}
+        if PERS_DIR.exists():
+            for f in PERS_DIR.glob("*.json"):
+                d = les(f, {})
+                if d.get("id") and d.get("bio"):
+                    old_bios[d["id"]] = d["bio"]
+        res = run("Stortinget API: representanter og biografier", lambda: P.build(
+            api, msdate, clean, RAW["saker"], RAW["sporsmal"], {x["id"] for x in saker if x["energi"]},
+            {q["id"] for q in spm if q["energiminister"] or set(q["tema"]) & ENERGI_TEMA}, bio_cache, old_bios,
+            log=lambda m: print(m, file=sys.stderr)), None)
+        if res:
+            personer, bio_cache = res
+            kilder["Stortinget API: representanter og biografier"]["antall"] = len(personer)
+            BIO_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            BIO_CACHE.write_text(json.dumps(bio_cache, ensure_ascii=False), encoding="utf-8")
+            PERS_DIR.mkdir(parents=True, exist_ok=True)
+            wanted = set()
+            for p in personer.values():
+                f = PERS_DIR / f"{P.slug(p['id'])}.json"
+                wanted.add(f.name)
+                txt = json.dumps(p, ensure_ascii=False, separators=(",", ":"))
+                if not f.exists() or f.read_text(encoding="utf-8") != txt:
+                    f.write_text(txt, encoding="utf-8")
+                    pers_changed = True
+            for f in PERS_DIR.glob("*.json"):
+                if f.name not in wanted:
+                    f.unlink()
+                    pers_changed = True
+            idx = json.dumps({"personer": sorted((P.index_entry(p) for p in personer.values()), key=lambda e: e["navn"])},
+                             ensure_ascii=False, separators=(",", ":"))
+            if not OUT_PERSONER.exists() or OUT_PERSONER.read_text(encoding="utf-8") != idx:
+                OUT_PERSONER.write_text(idx, encoding="utf-8")
+                pers_changed = True
+            print(f"Profilkort: {len(personer)} personer ({'endret' if pers_changed else 'uendret'})")
     # «endret» flyttes bare når selve innholdet endrer seg, slik at workflowen
     # kan la være å committe når ingenting nytt har skjedd.
     sig = lambda d: hashlib.sha256(json.dumps({k: v for k, v in d.items() if k not in ("generert", "endret", "kilder")},  # noqa: E731
                                               ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-    changed = not prev or sig(prev) != sig(data)
+    changed = not prev or sig(prev) != sig(data) or pers_changed
     data["endret"] = generated if changed else prev.get("endret", generated)
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:

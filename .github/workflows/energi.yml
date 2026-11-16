@@ -34,7 +34,14 @@ jobs:
       - name: Test parsere
         run: python -m pytest -q energi/tests -k "not data_og_feed"
 
-      - name: Hent data fra Stortinget og regjeringen.no
+      # Biografier caches mellom kjøringer (fornyes ukentlig, høyst 60 per kjøring)
+      - uses: actions/cache@v4
+        with:
+          path: energi/.cache
+          key: energi-bio-${{ github.run_id }}
+          restore-keys: energi-bio-
+
+      - name: Hent data fra Stortinget, regjeringen.no, Miljødirektoratet og operatørene
         id: fetch
         run: python energi/fetch.py
 

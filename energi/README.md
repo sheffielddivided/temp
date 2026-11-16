@@ -11,6 +11,9 @@ Publiseres på GitHub Pages under `/energi/`
 energi/
   fetch.py             henter og bearbeider data (bare standardbiblioteket)
   ku.py                parsere for operatørenes konsekvensutredninger
+  personer.py          profilkort for representanter
+  site/data/personer.json      indeks over representanter (lastes ved oppstart)
+  site/data/personer/<id>.json  ett profilkort per person (lastes ved klikk)
   site/index.html      nettsiden (vanlig HTML/CSS/JS, ingen byggesteg)
   site/app.js          visninger, filtre, søk, ruting (#/saker/123, #/horinger osv.)
   site/style.css       lyst og mørkt tema, mobil med bunnmeny
@@ -73,6 +76,23 @@ Høringer → «Operatører (KU)», med de nyeste dokumentene og eventuell frist
   ut.
 
 Hver operatør hentes for seg. Hvis én feiler, beholdes forrige data for den.
+
+### Profilkort for representanter (`personer.py`)
+
+Når du klikker på et navn, åpnes et profilkort (`#/person/<id>`). Kortet viser:
+
+- Grunndata: parti, fylke, alder, e-post og faste komiteer, fra
+  `dagensrepresentanter`.
+- Bilde, fra `personbilde`. Det hentes direkte fra Stortinget.
+- Kodet biografi: perioder, verv på Stortinget, utdanning, arbeidserfaring,
+  verv utenfor Stortinget og litteratur, fra `kodetbiografi`.
+- Alle saker personen er forslagstiller eller saksordfører på, og alle
+  spørsmål personen har stilt i inneværende og forrige sesjon, uansett tema.
+  Energisakene er merket.
+
+Biografiene caches i `energi/.cache/` (`actions/cache` i CI, ikke i git) og
+fornyes etter 7 dager, høyst 60 per kjøring (`BIO_MAX`). Personfilene skrives
+bare når innholdet endres.
 
 ### Hva regnes som en energisak?
 

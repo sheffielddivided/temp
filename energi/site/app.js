@@ -61,7 +61,13 @@
     const p = PARTI[id] || [id, "#8892a0"];
     return `<span class="party" title="${esc(p[0])}" style="--pc:${p[1]}"><i></i>${esc(id)}</span>`;
   };
-  const who = (p) => (p && p.navn ? `${esc(p.navn)} ${party(p.parti)}` : "");
+  const pidFor = (p) => p?.id || (p?.navn && D?.personByName?.get(norm(p.navn))) || null;
+  const pname = (p) => {
+    const id = pidFor(p);
+    return id ? `<span class="pers" role="link" tabindex="0" data-pid="${esc(id)}" title="Vis profil">${esc(p.navn)}</span>` : esc(p.navn);
+  };
+  const who = (p) => (p && p.navn ? `${pname(p)} ${party(p.parti)}` : "");
+  const slug = (pid) => [...pid].map((c) => (/[A-Za-z0-9]/.test(c) ? c : "_" + c.codePointAt(0).toString(16))).join("");
   const pill = (txt, cls = "", dot = false) => `<span class="pill ${cls}${dot ? " dotted" : ""}">${esc(txt)}</span>`;
   const store = {
     get(k, d) { try { const v = localStorage.getItem("energi:" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -439,7 +445,7 @@
   function closeSheet(fromRoute) {
     if (sheet.hidden) return;
     sheet.hidden = true; backdrop.hidden = true; document.body.style.overflow = "";
-    if (!fromRoute) location.hash = `#/${route().tab}`;
+    if (!fromRoute) location.hash = `#/${curTab || "oversikt"}`;
     lastFocus?.focus?.({ preventScroll: true });
   }
   $("#sheetClose").addEventListener("click", () => closeSheet());
@@ -493,16 +499,116 @@
       <a class="cta" href="${esc(q.url)}" target="_blank" rel="noopener">${q.status === "besvart" ? "Les svaret på stortinget.no" : "Se spørsmålet på stortinget.no"} ↗</a>`;
   }
 
+  // ---------- Profilkort ----------
+  const PERS_CACHE = new Map();
+  const ROLLE = { forslag: "Forslagstiller", ordforer: "Saksordfører" };
+  const ST = "https://www.stortinget.no";
+  const SPM_URL = { skriftlig: "/no/Saker-og-publikasjoner/Sporsmal/Skriftlige-sporsmal-og-svar/Skriftlig-sporsmal/?qnid=", sporretime: "/no/Saker-og-publikasjoner/Sporsmal/Sporretimesporsmal/et-sporretimesporsmal/?qnid=", muntlig: "/no/Saker-og-publikasjoner/Sporsmal/Sporretimesporsmal/et-sporretimesporsmal/?qnid=", interpellasjon: "/no/Saker-og-publikasjoner/Sporsmal/Interpellasjoner/Interpellasjon/?qnid=" };
+  const alder = (fodt) => { if (!fodt) return null; const f = toDate(fodt); let a = today.getFullYear() - f.getFullYear(); if (today < new Date(today.getFullYear(), f.getMonth(), f.getDate())) a--; return a; };
+  const aar = (r) => (r.fra || r.til ? `${r.fra || ""}–${r.til || ""}` : "");
+
+  function openPerson(pid) {
+    const meta = D.personer?.get(pid);
+    openSheet(`<div class="loading"><span class="spinner"></span>Henter profil …</div>`);
+    const file = meta?.fil || slug(pid);
+    const load = PERS_CACHE.get(pid) || fetch(`data/personer/${encodeURIComponent(file)}.json`, { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+    PERS_CACHE.set(pid, load);
+    load.then((p) => { if (route().tab === "person" && route().id === pid) { $("#sheetBody").innerHTML = personSheet(p); bindPerson(p); } })
+      .catch(() => { PERS_CACHE.delete(pid); $("#sheetBody").innerHTML = empty("Fant ikke profilen", "Personen er kanskje ikke i datagrunnlaget ennå."); });
+  }
+
+  function personSheet(p) {
+    const pc = PARTI[p.parti] || [p.parti_navn || p.parti || "", "#8892a0"];
+    const bio = p.bio || {};
+    const status = p.aktiv ? (p.vara ? "Vararepresentant (møtende)" : "Stortingsrepresentant") : "Ikke på Stortinget nå";
+    const a = alder(p.fodt);
+    const nE = p.saker.filter((x) => x.e).length, qE = p.sporsmal.filter((x) => x.e).length;
+    const qEm = p.sporsmal.filter((x) => /energiminister/i.test(x.til || "")).length;
+    const curP = (bio.perioder || []).map((x) => x.periode).sort().pop();
+    const verv = (bio.stortingsverv || []).filter((v) => v.periode === curP).sort((x, y) => (x.sort ?? 99) - (y.sort ?? 99));
+    const sec = (title, inner, open = true) => inner ? `<details class="psec" ${open ? "open" : ""}><summary>${esc(title)}</summary>${inner}</details>` : "";
+    const rows = (list, fn) => (list && list.length ? `<ul class="plist">${list.map(fn).join("")}</ul>` : "");
+    return `
+      <div class="phead">
+        <div class="pphoto" style="--pc:${pc[1]}"><img src="${esc(p.bilde)}" alt="" onerror="this.remove()"><span>${esc((p.fornavn || "?")[0])}${esc((p.etternavn || "")[0] || "")}</span></div>
+        <div class="pinfo">
+          <h2 id="sheetTitle">${esc(p.navn)}</h2>
+          <div class="pmeta"><span class="pill" style="background:color-mix(in srgb, ${pc[1]} 16%, transparent);color:var(--ink)"><i class="pdot" style="background:${pc[1]}"></i>${esc(p.parti_navn || pc[0])}</span>${p.fylke ? `<span>${esc(p.fylke)}</span>` : ""}</div>
+          <div class="pmeta muted">${esc(status)}${a !== null ? ` · ${a} år` : ""}${bio.ansiennitet?.aar ? ` · ${plural(bio.ansiennitet.aar, "år", "år")} på Stortinget` : ""}</div>
+        </div>
+      </div>
+      ${p.vara_for || p.fast_vara_for ? `<p class="lead" style="margin-top:10px">Vara for ${esc(p.vara_for || p.fast_vara_for)}</p>` : ""}
+      <div class="kpis pk">
+        <div class="kpi"><div class="v">${nE}<small>/${p.saker.length}</small></div><div class="k">energisaker / alle saker</div></div>
+        <div class="kpi"><div class="v">${qE}<small>/${p.sporsmal.length}</small></div><div class="k">energispørsmål / alle</div></div>
+        <div class="kpi"><div class="v">${qEm}</div><div class="k">til energiministeren</div></div>
+      </div>
+      <div class="pbtns">${p.epost ? `<a class="btn" href="mailto:${esc(p.epost)}">E-post</a>` : ""}<a class="btn" href="${esc(p.profil)}" target="_blank" rel="noopener">Profil på stortinget.no ↗</a></div>
+      ${p.komiteer?.length || verv.length ? `<h4>Komiteer og verv${curP ? ` ${esc(curP)}` : ""}</h4>${verv.length ? rows(verv, (v) => `<li><b>${esc(v.navn)}</b><span>${esc(v.verv || "")}${v.type ? ` · ${esc(v.type)}` : ""}</span></li>`) : rows(p.komiteer, (k) => `<li><b>${esc(k)}</b></li>`)}` : ""}
+      <h4>Saker med navnet på</h4>
+      <div class="toolbar" style="margin:0 0 8px">${seg("pSakSeg", [["e", "Energi", nE], ["a", "Alle", p.saker.length]], nE ? "e" : "a")}</div>
+      <div id="pSaker"></div>
+      <h4>Spørsmål stilt</h4>
+      <div class="toolbar" style="margin:0 0 8px">${seg("pSpmSeg", [["e", "Energi", qE], ["a", "Alle", p.sporsmal.length]], qE ? "e" : "a")}</div>
+      <div id="pSpm"></div>
+      <h4>Biografi</h4>
+      ${!p.bio ? `<p class="muted">Biografi er ikke hentet ennå.</p>` : ""}
+      ${sec("Perioder på Stortinget", rows([...(bio.perioder || [])].reverse(), (x) => `<li><b>${esc(x.periode)}</b><span>${esc(x.verv || "")} · ${esc(x.fylke || "")} · ${esc(x.parti || "")}</span></li>`), (bio.perioder || []).length <= 3)}
+      ${sec("Utdanning", rows(bio.utdanning, (x) => `<li><b>${esc(x.navn)}</b><span>${esc(aar(x))}${x.merknad ? ` · ${esc(x.merknad)}` : ""}</span></li>`), false)}
+      ${sec("Arbeidserfaring", rows(bio.yrke, (x) => `<li><b>${esc(x.navn)}</b><span>${esc(aar(x))}${x.merknad ? ` · ${esc(x.merknad)}` : ""}</span></li>`), false)}
+      ${sec("Verv utenfor Stortinget", rows(bio.verv, (x) => `<li><b>${esc([x.verv, x.organisasjon].filter(Boolean).join(", "))}</b><span>${esc([x.sted, aar(x)].filter(Boolean).join(" · "))}</span></li>`), false)}
+      ${sec("Tidligere verv på Stortinget", rows((bio.stortingsverv || []).filter((v) => v.periode !== curP), (v) => `<li><b>${esc(v.navn)}</b><span>${esc(v.verv || "")} · ${esc(v.periode || "")}</span></li>`), false)}
+      ${sec("Annet", rows(bio.annet, (x) => `<li><b>${esc(x.navn)}</b><span>${esc(aar(x))}</span></li>`), false)}
+      ${sec("Litteratur", rows(bio.litteratur, (x) => `<li>${esc(x)}</li>`), false)}
+      <p class="muted" style="margin-top:18px;font-size:12.5px">Kilde: Stortingets åpne data (representantdata og kodet biografi). Saker og spørsmål gjelder ${esc(D.sesjoner.join(" og "))}.</p>`;
+  }
+
+  function bindPerson(p) {
+    const lim = { s: 25, q: 25 };
+    const sakRow = (x) => {
+      const own = D.sakById.has(x.id);
+      const href = own ? `#/saker/${x.id}` : `${ST}/no/Saker-og-publikasjoner/Saker/Sak/?p=${x.id}`;
+      return `<a class="pitem" href="${href}" ${own ? "" : 'target="_blank" rel="noopener"'}><div class="row1">${pill(ROLLE[x.r], x.r === "ordforer" ? "violet" : "blue")}${x.e ? pill("Energi", "amber") : ""}<span class="ref">${esc(x.h || "")}</span></div><div class="pt">${esc(x.t)}</div><div class="pm">${esc([x.st, x.k, x.s].filter(Boolean).join(" · "))}</div></a>`;
+    };
+    const spmRow = (x) => {
+      const own = D.spmById.has(x.id);
+      const href = own ? `#/sporsmal/${x.id}` : ST + SPM_URL[x.ty] + x.id;
+      return `<a class="pitem" href="${href}" ${own ? "" : 'target="_blank" rel="noopener"'}><div class="row1"><span class="tag">${esc(SPM_KORT[x.ty])}</span>${x.e ? pill("Energi", "amber") : ""}<span>${esc(fmt(x.d, true))}</span>${x.b ? pill("Besvart", "green", true) : pill("Venter", "amber", true)}</div><div class="pt clamp">${esc(x.t)}</div><div class="pm">Til ${esc(x.til || "")}</div></a>`;
+    };
+    const render = (key, segId, boxId, list, rowFn) => {
+      const mode = $(`#${segId} [aria-pressed="true"]`)?.dataset.v || "a";
+      const L = mode === "e" ? list.filter((x) => x.e) : list;
+      $(`#${boxId}`).innerHTML = L.length ? `<div class="plist2">${L.slice(0, lim[key]).map(rowFn).join("")}</div>${L.length > lim[key] ? `<button class="btn more-btn" data-more="${key}" type="button">Vis alle ${L.length}</button>` : ""}` : `<p class="muted">Ingen.</p>`;
+    };
+    const both = () => { render("s", "pSakSeg", "pSaker", p.saker, sakRow); render("q", "pSpmSeg", "pSpm", p.sporsmal, spmRow); };
+    for (const id of ["pSakSeg", "pSpmSeg"]) {
+      $(`#${id}`).addEventListener("click", (e) => {
+        const b = e.target.closest("button"); if (!b) return;
+        $(`#${id}`).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+        lim.s = lim.q = 25; both();
+      });
+    }
+    $("#sheetBody").addEventListener("click", (e) => { const m = e.target.closest("[data-more]"); if (m) { lim[m.dataset.more] = 1e4; both(); } });
+    both();
+  }
+
   // ---------- Ruting ----------
   const TABS = { oversikt: viewOversikt, saker: viewSaker, sporsmal: viewSporsmal, horinger: viewHoringer, kalender: viewKalender, nyheter: viewRegjeringen };
   const route = () => {
     let [, tab, id] = (location.hash || "#/oversikt").split("/");
     if (tab === "regjeringen") tab = "nyheter";
+    if (tab === "person" && id) return { tab: "person", id: decodeURIComponent(id) };
     return { tab: TABS[tab] ? tab : "oversikt", id };
   };
   let curTab = null;
   function go() {
     const r = route();
+    if (r.tab === "person") {
+      if (!curTab) { curTab = "oversikt"; TABS.oversikt(); }
+      document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === curTab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+      openPerson(r.id);
+      return;
+    }
     document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === r.tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
     if (r.tab !== curTab || !r.id) {
       if (r.tab !== curTab) window.scrollTo(0, 0);
@@ -519,6 +625,15 @@
   window.addEventListener("hashchange", go);
 
   // Klikk på hele feed-raden
+  const goPerson = (el) => { location.hash = `#/person/${encodeURIComponent(el.dataset.pid)}`; };
+  document.addEventListener("click", (e) => {
+    const pe = e.target.closest("[data-pid]");
+    if (pe) { e.preventDefault(); e.stopPropagation(); goPerson(pe); }
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    const pe = e.target.closest?.("[data-pid]");
+    if (pe && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); goPerson(pe); }
+  });
   document.addEventListener("click", (e) => {
     const li = e.target.closest("li.clickable");
     if (!li || e.target.closest("a")) return;
@@ -534,10 +649,14 @@
       <p>Abonner på nye hendelser med <a href="feed.xml">RSS-feeden</a>.</p></details>`;
   }
 
+  const personIdx = fetch("data/personer.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : { personer: [] })).catch(() => ({ personer: [] }));
   fetch("data/energi.json", { cache: "no-cache" })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then((d) => {
+    .then(async (d) => {
       D = d;
+      const pi = await personIdx;
+      D.personer = new Map(pi.personer.map((p) => [p.id, p]));
+      D.personByName = new Map(pi.personer.map((p) => [norm(p.navn), p.id]));
       D.sakById = new Map(d.saker.map((s) => [s.id, s]));
       D.spmById = new Map(d.sporsmal.map((q) => [q.id, q]));
       D.hor = buildHoringer();
