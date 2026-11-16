@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -109,16 +110,39 @@ SPM_URL = {
 # --------------------------------------------------------------------------
 # Hjelpere
 # --------------------------------------------------------------------------
-def get(url: str, *, retries: int = 3, timeout: int = 40) -> bytes:
+_throttle_lock = threading.Lock()
+_last_call: dict[str, float] = {}
+MIN_INTERVAL = 0.35  # sekunder mellom kall til samme vert (Stortinget gir 429 ellers)
+
+
+def _throttle(url: str) -> None:
+    host = urllib.parse.urlsplit(url).netloc
+    with _throttle_lock:
+        wait = _last_call.get(host, 0) + MIN_INTERVAL - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_call[host] = time.monotonic()
+
+
+def get(url: str, *, retries: int = 5, timeout: int = 40) -> bytes:
     last: Exception | None = None
     for i in range(retries):
+        _throttle(url)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (429, 500, 502, 503, 504):
+                break
+            ra = e.headers.get("Retry-After") if e.headers else None
+            delay = float(ra) if ra and ra.isdigit() else 5 * 2 ** i  # 5, 10, 20, 40 s
+            print(f"  … {e.code} fra {urllib.parse.urlsplit(url).netloc}, venter {delay:.0f} s", file=sys.stderr)
+            time.sleep(min(delay, 60))
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             last = e
-            time.sleep(1.5 * (i + 1))
+            time.sleep(2 * (i + 1))
     raise RuntimeError(f"{url}: {last}")
 
 
@@ -221,7 +245,7 @@ def fetch_saker(sesj: list[str], tema_ids: set[int]) -> list[dict]:
             d = {}
         return build_sak(s, x, d, tema_ids)
 
-    with cf.ThreadPoolExecutor(6) as ex:
+    with cf.ThreadPoolExecutor(2) as ex:
         out = list(ex.map(detail, raw.values()))
     return [s for s in out if s]
 
