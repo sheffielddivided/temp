@@ -76462,3 +76462,86 @@ date,country,state,basin,gom,drill_for,location,trajectory,rigs
 2026-11-06,United States,Wyoming,Other,No,Gas,Land,Vertical,1
 2026-11-06,United States,Wyoming,Other,No,Oil,Land,Horizontal,14
 2026-11-06,United States,Wyoming,Other,No,Oil,Land,Vertical,1
+2026-11-13,Canada,Alberta,Other,No,Gas,Land,Horizontal,53
+2026-11-13,Canada,Alberta,Other,No,Oil,Land,Directional,5
+2026-11-13,Canada,Alberta,Other,No,Oil,Land,Horizontal,110
+2026-11-13,Canada,British Columbia,Other,No,Gas,Land,Horizontal,11
+2026-11-13,Canada,Manitoba,Other,No,Oil,Land,Horizontal,4
+2026-11-13,Canada,NL Offshore,Other,No,Oil,Offshore,Directional,2
+2026-11-13,Canada,Saskatchewan,Other,No,Gas,Land,Directional,1
+2026-11-13,Canada,Saskatchewan,Other,No,Gas,Land,Horizontal,2
+2026-11-13,Canada,Saskatchewan,Other,No,Miscellaneous,Land,Directional,1
+2026-11-13,Canada,Saskatchewan,Other,No,Miscellaneous,Land,Horizontal,1
+2026-11-13,Canada,Saskatchewan,Other,No,Oil,Land,Directional,3
+2026-11-13,Canada,Saskatchewan,Other,No,Oil,Land,Horizontal,38
+2026-11-13,Canada,Saskatchewan,Other,No,Oil,Land,Other,2
+2026-11-13,United States,Alaska,Other,No,Gas,Land,Directional,1
+2026-11-13,United States,Alaska,Other,No,Miscellaneous,Land,Other,1
+2026-11-13,United States,Alaska,Other,No,Oil,Land,Directional,5
+2026-11-13,United States,Alaska,Other,No,Oil,Land,Horizontal,3
+2026-11-13,United States,California,Other,No,Miscellaneous,Land,Directional,2
+2026-11-13,United States,California,Other,No,Oil,Land,Directional,1
+2026-11-13,United States,California,Other,No,Oil,Land,Horizontal,1
+2026-11-13,United States,California,Other,No,Oil,Offshore,Horizontal,1
+2026-11-13,United States,Colorado,DJ-Niobrara,No,Oil,Land,Horizontal,9
+2026-11-13,United States,Colorado,Other,No,Gas,Land,Directional,1
+2026-11-13,United States,Colorado,Other,No,Gas,Land,Horizontal,1
+2026-11-13,United States,Louisiana,Haynesville,No,Gas,Land,Horizontal,24
+2026-11-13,United States,Louisiana,Haynesville,No,Gas,Land,Vertical,1
+2026-11-13,United States,Louisiana,Other,No,Oil,Inland Waters,Directional,1
+2026-11-13,United States,Louisiana,Other,Yes,Oil,Offshore,Directional,10
+2026-11-13,United States,Louisiana,Other,Yes,Oil,Offshore,Vertical,1
+2026-11-13,United States,Michigan,Other,No,Gas,Land,Horizontal,1
+2026-11-13,United States,Montana,Williston,No,Gas,Land,Horizontal,1
+2026-11-13,United States,Montana,Williston,No,Oil,Land,Directional,1
+2026-11-13,United States,Montana,Williston,No,Oil,Land,Horizontal,2
+2026-11-13,United States,Nevada,Other,No,Miscellaneous,Land,Vertical,2
+2026-11-13,United States,Nevada,Other,No,Oil,Land,Vertical,1
+2026-11-13,United States,New Mexico,Other,No,Gas,Land,Horizontal,4
+2026-11-13,United States,New Mexico,Permian,No,Oil,Land,Directional,15
+2026-11-13,United States,New Mexico,Permian,No,Oil,Land,Horizontal,82
+2026-11-13,United States,New Mexico,Permian,No,Oil,Land,Vertical,1
+2026-11-13,United States,North Dakota,Williston,No,Gas,Land,Horizontal,4
+2026-11-13,United States,North Dakota,Williston,No,Oil,Land,Directional,2
+2026-11-13,United States,North Dakota,Williston,No,Oil,Land,Horizontal,24
+2026-11-13,United States,North Dakota,Williston,No,Oil,Land,Vertical,1
+2026-11-13,United States,Ohio,Utica,No,Gas,Land,Horizontal,8
+2026-11-13,United States,Ohio,Utica,No,Gas,Land,Vertical,1
+2026-11-13,United States,Oklahoma,Ardmore Woodford,No,Oil,Land,Horizontal,1
+2026-11-13,United States,Oklahoma,Cana Woodford,No,Oil,Land,Directional,1
+2026-11-13,United States,Oklahoma,Cana Woodford,No,Oil,Land,Horizontal,17
+2026-11-13,United States,Oklahoma,Granite Wash,No,Oil,Land,Horizontal,22
+2026-11-13,United States,Oklahoma,Other,No,Oil,Land,Directional,1
+2026-11-13,United States,Oklahoma,Other,No,Oil,Land,Horizontal,7
+2026-11-13,United States,Oregon,Other,No,Miscellaneous,Land,Directional,1
+2026-11-13,United States,Oregon,Other,No,Miscellaneous,Land,Vertical,1
+2026-11-13,United States,Pennsylvania,Marcellus,No,Gas,Land,Directional,1
+2026-11-13,United States,Pennsylvania,Marcellus,No,Gas,Land,Horizontal,13
+2026-11-13,United States,Pennsylvania,Utica,No,Gas,Land,Directional,1
+2026-11-13,United States,Texas,Barnett,No,Gas,Land,Horizontal,1
+2026-11-13,United States,Texas,Barnett,No,Oil,Land,Horizontal,1
+2026-11-13,United States,Texas,Eagle Ford,No,Gas,Land,Horizontal,7
+2026-11-13,United States,Texas,Eagle Ford,No,Oil,Land,Horizontal,43
+2026-11-13,United States,Texas,Granite Wash,No,Oil,Land,Horizontal,1
+2026-11-13,United States,Texas,Haynesville,No,Gas,Land,Horizontal,28
+2026-11-13,United States,Texas,Other,No,Gas,Land,Directional,2
+2026-11-13,United States,Texas,Other,No,Gas,Land,Horizontal,11
+2026-11-13,United States,Texas,Other,No,Gas,Land,Vertical,1
+2026-11-13,United States,Texas,Other,No,Oil,Land,Horizontal,4
+2026-11-13,United States,Texas,Other,Yes,Oil,Offshore,Directional,1
+2026-11-13,United States,Texas,Permian,No,Oil,Land,Directional,2
+2026-11-13,United States,Texas,Permian,No,Oil,Land,Horizontal,170
+2026-11-13,United States,Texas,Permian,No,Oil,Land,Vertical,5
+2026-11-13,United States,Utah,Other,No,Gas,Land,Horizontal,1
+2026-11-13,United States,Utah,Other,No,Gas,Land,Other,2
+2026-11-13,United States,Utah,Other,No,Miscellaneous,Land,Horizontal,2
+2026-11-13,United States,Utah,Other,No,Miscellaneous,Land,Vertical,2
+2026-11-13,United States,Utah,Other,No,Oil,Land,Horizontal,10
+2026-11-13,United States,Utah,Other,No,Oil,Land,Vertical,1
+2026-11-13,United States,West Virginia,Marcellus,No,Gas,Land,Horizontal,8
+2026-11-13,United States,West Virginia,Marcellus,No,Gas,Land,Vertical,1
+2026-11-13,United States,Wyoming,Other,No,Gas,Land,Horizontal,1
+2026-11-13,United States,Wyoming,Other,No,Gas,Land,Other,1
+2026-11-13,United States,Wyoming,Other,No,Gas,Land,Vertical,1
+2026-11-13,United States,Wyoming,Other,No,Oil,Land,Horizontal,14
+2026-11-13,United States,Wyoming,Other,No,Oil,Land,Vertical,1
