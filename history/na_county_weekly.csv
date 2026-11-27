@@ -173796,10 +173796,9 @@ date,country,state,county,basin,rigs
 2026-11-20,Canada,British Columbia,Northern British Columbia,Other,12
 2026-11-20,Canada,Manitoba,Manitoba,Other,4
 2026-11-20,Canada,NL Offshore,NL Offshore,Other,2
-2026-11-20,Canada,Saskatchewan,Central Saskatchewan,Other,19
+2026-11-20,Canada,Saskatchewan,Central Saskatchewan,Other,23
 2026-11-20,Canada,Saskatchewan,Eastern Saskatchewan,Other,27
 2026-11-20,Canada,Saskatchewan,Southwestern Saskatchewan,Other,2
-2026-11-20,Canada,Saskatchewan,Ukjent,Other,4
 2026-11-20,United States,Alaska,Beechey Point,Other,6
 2026-11-20,United States,Alaska,Harrison Bay,Other,3
 2026-11-20,United States,Alaska,Kenai Peninsula,Other,1
@@ -173947,3 +173946,164 @@ date,country,state,county,basin,rigs
 2026-11-20,United States,Wyoming,Lincoln,Other,1
 2026-11-20,United States,Wyoming,Sublette,Other,1
 2026-11-20,United States,Wyoming,Sweetwater,Other,1
+2026-11-25,Canada,Alberta,Central Alberta,Other,9
+2026-11-25,Canada,Alberta,East Central Alberta,Other,16
+2026-11-25,Canada,Alberta,Foothills,Other,1
+2026-11-25,Canada,Alberta,Foothills Front,Other,64
+2026-11-25,Canada,Alberta,Northeastern Alberta,Other,49
+2026-11-25,Canada,Alberta,Northwestern Alberta,Other,15
+2026-11-25,Canada,Alberta,Southeastern Alberta,Other,2
+2026-11-25,Canada,British Columbia,Northern British Columbia,Other,12
+2026-11-25,Canada,Manitoba,Manitoba,Other,4
+2026-11-25,Canada,NL Offshore,NL Offshore,Other,3
+2026-11-25,Canada,Saskatchewan,Central Saskatchewan,Other,25
+2026-11-25,Canada,Saskatchewan,Eastern Saskatchewan,Other,27
+2026-11-25,Canada,Saskatchewan,Southwestern Saskatchewan,Other,2
+2026-11-25,United States,Alaska,Beechey Point,Other,6
+2026-11-25,United States,Alaska,Harrison Bay,Other,3
+2026-11-25,United States,Alaska,Kenai Peninsula,Other,1
+2026-11-25,United States,Alaska,Tyonek,Other,1
+2026-11-25,United States,California,Kern,Other,3
+2026-11-25,United States,California,Lake,Other,1
+2026-11-25,United States,California,Ventura,Other,1
+2026-11-25,United States,Colorado,Arapahoe,DJ-Niobrara,1
+2026-11-25,United States,Colorado,Larimer,DJ-Niobrara,1
+2026-11-25,United States,Colorado,Rio Blanco,Other,2
+2026-11-25,United States,Colorado,Weld,DJ-Niobrara,7
+2026-11-25,United States,Louisiana,Bienville,Haynesville,2
+2026-11-25,United States,Louisiana,Bossier,Haynesville,3
+2026-11-25,United States,Louisiana,Caddo,Haynesville,6
+2026-11-25,United States,Louisiana,Claiborne,Other,1
+2026-11-25,United States,Louisiana,De Soto,Haynesville,6
+2026-11-25,United States,Louisiana,East Cameron,Other,1
+2026-11-25,United States,Louisiana,Eugene Island,Other,1
+2026-11-25,United States,Louisiana,Green Canyon,Other,2
+2026-11-25,United States,Louisiana,Lafourche,Other,1
+2026-11-25,United States,Louisiana,Mississippi Canyon,Other,5
+2026-11-25,United States,Louisiana,Natchitoches,Haynesville,3
+2026-11-25,United States,Louisiana,Red River,Haynesville,2
+2026-11-25,United States,Louisiana,Sabine,Haynesville,2
+2026-11-25,United States,Louisiana,Terrebonne,Other,1
+2026-11-25,United States,Louisiana,Walker Ridge,Other,1
+2026-11-25,United States,Michigan,Clare,Other,1
+2026-11-25,United States,Montana,Richland,Williston,3
+2026-11-25,United States,Nevada,Elko,Other,1
+2026-11-25,United States,Nevada,Pershing,Other,1
+2026-11-25,United States,New Mexico,Chaves,Permian,1
+2026-11-25,United States,New Mexico,Eddy,Permian,50
+2026-11-25,United States,New Mexico,Lea,Permian,49
+2026-11-25,United States,New Mexico,Rio Arriba,Other,2
+2026-11-25,United States,New Mexico,San Juan,Other,2
+2026-11-25,United States,North Dakota,Billings,Williston,1
+2026-11-25,United States,North Dakota,Burke,Williston,1
+2026-11-25,United States,North Dakota,Divide,Williston,5
+2026-11-25,United States,North Dakota,Dunn,Williston,2
+2026-11-25,United States,North Dakota,Mckenzie,Williston,13
+2026-11-25,United States,North Dakota,Mountrail,Williston,4
+2026-11-25,United States,North Dakota,Williams,Williston,6
+2026-11-25,United States,Ohio,Belmont,Utica,2
+2026-11-25,United States,Ohio,Carroll,Utica,2
+2026-11-25,United States,Ohio,Guernsey,Utica,1
+2026-11-25,United States,Ohio,Jefferson,Utica,1
+2026-11-25,United States,Ohio,Monroe,Utica,1
+2026-11-25,United States,Ohio,Noble,Utica,1
+2026-11-25,United States,Ohio,Tuscarawas,Utica,1
+2026-11-25,United States,Oklahoma,Beckham,Granite Wash,1
+2026-11-25,United States,Oklahoma,Blaine,Cana Woodford,1
+2026-11-25,United States,Oklahoma,Caddo,Cana Woodford,1
+2026-11-25,United States,Oklahoma,Canadian,Cana Woodford,7
+2026-11-25,United States,Oklahoma,Carter,Ardmore Woodford,1
+2026-11-25,United States,Oklahoma,Custer,Granite Wash,12
+2026-11-25,United States,Oklahoma,Garvin,Other,1
+2026-11-25,United States,Oklahoma,Grady,Cana Woodford,9
+2026-11-25,United States,Oklahoma,Kingfisher,Other,2
+2026-11-25,United States,Oklahoma,Major,Other,1
+2026-11-25,United States,Oklahoma,Mcclain,Other,3
+2026-11-25,United States,Oklahoma,Oklahoma,Other,1
+2026-11-25,United States,Oklahoma,Roger Mills,Granite Wash,9
+2026-11-25,United States,Oklahoma,Stephens,Other,1
+2026-11-25,United States,Oregon,Deschutes,Other,2
+2026-11-25,United States,Pennsylvania,Armstrong,Marcellus,1
+2026-11-25,United States,Pennsylvania,Beaver,Utica,1
+2026-11-25,United States,Pennsylvania,Bradford,Marcellus,1
+2026-11-25,United States,Pennsylvania,Greene,Marcellus,2
+2026-11-25,United States,Pennsylvania,Lycoming,Marcellus,2
+2026-11-25,United States,Pennsylvania,Sullivan,Marcellus,1
+2026-11-25,United States,Pennsylvania,Tioga,Marcellus,2
+2026-11-25,United States,Pennsylvania,Washington,Marcellus,3
+2026-11-25,United States,Pennsylvania,Westmoreland,Marcellus,1
+2026-11-25,United States,Pennsylvania,Wyoming,Marcellus,1
+2026-11-25,United States,Texas,Alaminos Canyon,Other,1
+2026-11-25,United States,Texas,Andrews,Permian,9
+2026-11-25,United States,Texas,Atascosa,Eagle Ford,2
+2026-11-25,United States,Texas,Borden,Permian,2
+2026-11-25,United States,Texas,Burleson,Other,1
+2026-11-25,United States,Texas,Cass,Other,3
+2026-11-25,United States,Texas,Cherokee,Other,1
+2026-11-25,United States,Texas,Cooke,Barnett,1
+2026-11-25,United States,Texas,Crane,Permian,7
+2026-11-25,United States,Texas,Culberson,Permian,5
+2026-11-25,United States,Texas,Dawson,Permian,3
+2026-11-25,United States,Texas,De Witt,Eagle Ford,4
+2026-11-25,United States,Texas,Dimmit,Eagle Ford,5
+2026-11-25,United States,Texas,Ector,Permian,12
+2026-11-25,United States,Texas,Fayette,Other,1
+2026-11-25,United States,Texas,Frio,Eagle Ford,3
+2026-11-25,United States,Texas,Gaines,Permian,1
+2026-11-25,United States,Texas,Glasscock,Permian,6
+2026-11-25,United States,Texas,Gonzales,Eagle Ford,2
+2026-11-25,United States,Texas,Grayson,Other,1
+2026-11-25,United States,Texas,Gregg,Other,1
+2026-11-25,United States,Texas,Harrison,Haynesville,7
+2026-11-25,United States,Texas,Hemphill,Granite Wash,1
+2026-11-25,United States,Texas,Howard,Permian,5
+2026-11-25,United States,Texas,Irion,Permian,3
+2026-11-25,United States,Texas,Karnes,Eagle Ford,8
+2026-11-25,United States,Texas,La Salle,Eagle Ford,7
+2026-11-25,United States,Texas,Lavaca,Other,1
+2026-11-25,United States,Texas,Lee,Other,1
+2026-11-25,United States,Texas,Leon,Other,3
+2026-11-25,United States,Texas,Loving,Permian,16
+2026-11-25,United States,Texas,Madison,Other,1
+2026-11-25,United States,Texas,Marion,Other,1
+2026-11-25,United States,Texas,Martin,Permian,23
+2026-11-25,United States,Texas,Maverick,Eagle Ford,1
+2026-11-25,United States,Texas,Mcmullen,Eagle Ford,5
+2026-11-25,United States,Texas,Midland,Permian,21
+2026-11-25,United States,Texas,Mitchell,Permian,1
+2026-11-25,United States,Texas,Nacogdoches,Haynesville,8
+2026-11-25,United States,Texas,Panola,Haynesville,5
+2026-11-25,United States,Texas,Pecos,Permian,4
+2026-11-25,United States,Texas,Reagan,Permian,7
+2026-11-25,United States,Texas,Reeves,Permian,25
+2026-11-25,United States,Texas,Robertson,Other,1
+2026-11-25,United States,Texas,Rusk,Haynesville,2
+2026-11-25,United States,Texas,San Augustine,Haynesville,6
+2026-11-25,United States,Texas,Shelby,Haynesville,2
+2026-11-25,United States,Texas,Sterling,Permian,1
+2026-11-25,United States,Texas,Tom Green,Permian,1
+2026-11-25,United States,Texas,Upton,Permian,15
+2026-11-25,United States,Texas,Ward,Permian,6
+2026-11-25,United States,Texas,Washington,Other,1
+2026-11-25,United States,Texas,Webb,Eagle Ford,12
+2026-11-25,United States,Texas,Wilson,Eagle Ford,1
+2026-11-25,United States,Texas,Winkler,Permian,2
+2026-11-25,United States,Texas,Wise,Barnett,1
+2026-11-25,United States,Texas,Yoakum,Permian,2
+2026-11-25,United States,Utah,Beaver,Other,4
+2026-11-25,United States,Utah,Duchesne,Other,7
+2026-11-25,United States,Utah,Millard,Other,1
+2026-11-25,United States,Utah,Uintah,Other,7
+2026-11-25,United States,West Virginia,Lewis,Marcellus,1
+2026-11-25,United States,West Virginia,Monongalia,Marcellus,1
+2026-11-25,United States,West Virginia,Ohio,Marcellus,1
+2026-11-25,United States,West Virginia,Pleasants,Marcellus,1
+2026-11-25,United States,West Virginia,Ritchie,Marcellus,1
+2026-11-25,United States,West Virginia,Wetzel,Marcellus,4
+2026-11-25,United States,Wyoming,Campbell,Other,5
+2026-11-25,United States,Wyoming,Converse,Other,9
+2026-11-25,United States,Wyoming,Crook,Other,1
+2026-11-25,United States,Wyoming,Johnson,Other,1
+2026-11-25,United States,Wyoming,Lincoln,Other,1
+2026-11-25,United States,Wyoming,Sublette,Other,1
+2026-11-25,United States,Wyoming,Sweetwater,Other,1
